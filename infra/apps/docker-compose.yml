@@ -1,6 +1,5 @@
-version: '3.8'
-
 services:
+
   # --- Backend REST API ---
   backend:
     image: ${REGISTRY_HOST:-192.168.1.10:5000}/backend:${BACKEND_TAG:-latest}
