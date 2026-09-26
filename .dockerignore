@@ -1,0 +1,7 @@
+.venv
+__pycache__
+*.db
+.git
+.gitignore
+debug_snapshots/*
+exports/*

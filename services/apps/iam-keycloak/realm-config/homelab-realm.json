@@ -1,0 +1,25 @@
+{
+  "realm": "homelab",
+  "enabled": true,
+  "displayName": "Homelab Data Platform Realm",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "clients": [
+    {
+      "clientId": "homelab-frontend",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "webOrigins": ["*"],
+      "redirectUris": ["http://localhost:3000/*"]
+    },
+    {
+      "clientId": "homelab-backend",
+      "enabled": true,
+      "bearerOnly": true
+    }
+  ]
+}

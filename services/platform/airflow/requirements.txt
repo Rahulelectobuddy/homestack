@@ -1,0 +1,6 @@
+apache-airflow-providers-postgres>=5.10.0
+apache-airflow-providers-amazon>=8.16.0
+pandas>=2.2.0
+pyarrow>=15.0.0
+minio>=7.2.0
+paho-mqtt>=1.6.1

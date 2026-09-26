@@ -1,0 +1,61 @@
+name: CI - Lint, Test & Build Verification
+
+on:
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'services/**'
+      - 'libs/**'
+      - 'infra/**'
+
+# Limit CI concurrency to 1 build at a time to prevent RAM spikes on 8GB box
+concurrency:
+  group: ci-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-and-build:
+    name: Build & Verify Changed Services
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Changed Service Paths
+        id: filter
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            airflow: 'services/platform/airflow/**'
+            backend: 'services/apps/backend/**'
+            frontend: 'services/apps/frontend/**'
+            bus-scraper: 'services/apps/bus-scraper/**'
+            health-ingester: 'services/apps/health-ingester/**'
+            irrigation-mqtt: 'services/apps/irrigation-mqtt/**'
+
+      - name: Build Airflow Image
+        if: steps.filter.outputs.airflow == 'true'
+        run: docker build -f services/platform/airflow/Dockerfile -t test-airflow:ci .
+
+      - name: Build Backend Image
+        if: steps.filter.outputs.backend == 'true'
+        run: docker build -f services/apps/backend/Dockerfile -t test-backend:ci .
+
+      - name: Build Frontend Image
+        if: steps.filter.outputs.frontend == 'true'
+        run: docker build -f services/apps/frontend/Dockerfile -t test-frontend:ci services/apps/frontend/
+
+      - name: Build Bus Scraper Image
+        if: steps.filter.outputs.bus-scraper == 'true'
+        run: docker build -f services/apps/bus-scraper/Dockerfile -t test-bus-scraper:ci .
+
+      - name: Build Health Ingester Image
+        if: steps.filter.outputs.health-ingester == 'true'
+        run: docker build -f services/apps/health-ingester/Dockerfile -t test-health-ingester:ci .
+
+      - name: Build Irrigation MQTT Image
+        if: steps.filter.outputs.irrigation-mqtt == 'true'
+        run: docker build -f services/apps/irrigation-mqtt/Dockerfile -t test-irrigation-mqtt:ci .
+

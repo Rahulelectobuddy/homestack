@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # --- Local Docker Registry ---
+  registry:
+    image: registry:2
+    container_name: local_registry
+    restart: always
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+
+  # --- Shared Relational Database ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-homelab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-homelab123}
+      POSTGRES_DB: ${POSTGRES_DB:-homelab_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # --- Object Storage (Data Lake) ---
+  minio:
+    image: minio/minio:RELEASE.2024-01-31T03-20-07Z
+    container_name: minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  # --- MQTT Broker ---
+  mqtt-broker:
+    image: eclipse-mosquitto:2.0
+    container_name: mqtt_broker
+    restart: always
+    ports:
+      - "1883:1883"
+    volumes:
+      - ../../services/platform/mqtt-broker/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+
+  # --- Orchestration (Airflow) ---
+  airflow-webserver:
+    image: ${REGISTRY_HOST:-localhost:5000}/airflow:${AIRFLOW_TAG:-latest}
+    container_name: airflow_webserver
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-homelab}:${POSTGRES_PASSWORD:-homelab123}@postgres:5432/airflow_db
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-46THtBPh6AK24V459wHgq_p7p4W8Vp09K3w3Q_9z4E0=}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    ports:
+      - "8080:8080"
+    command: webserver
+    volumes:
+      - ../../services/platform/airflow/dags:/opt/airflow/dags
+
+  airflow-scheduler:
+    image: ${REGISTRY_HOST:-localhost:5000}/airflow:${AIRFLOW_TAG:-latest}
+    container_name: airflow_scheduler
+    restart: always
+    depends_on:
+      - airflow-webserver
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-homelab}:${POSTGRES_PASSWORD:-homelab123}@postgres:5432/airflow_db
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-46THtBPh6AK24V459wHgq_p7p4W8Vp09K3w3Q_9z4E0=}
+    command: scheduler
+    volumes:
+      - ../../services/platform/airflow/dags:/opt/airflow/dags
+
+  # --- Monitoring Stack ---
+  prometheus:
+    image: prom/prometheus:v2.49.1
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: loki
+    restart: always
+    ports:
+      - "3100:3100"
+    volumes:
+      - ../monitoring/loki-config.yml:/etc/loki/local-config.yaml
+
+  grafana:
+    image: grafana/grafana:10.3.1
+    container_name: grafana
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  registry_data:
+  postgres_data:
+  minio_data:
+  mosquitto_data:
+  prometheus_data:
+  grafana_data:

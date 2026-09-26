@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # --- Backend REST API ---
+  backend:
+    image: ${REGISTRY_HOST:-192.168.1.10:5000}/backend:${BACKEND_TAG:-latest}
+    container_name: app_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-homelab}:${POSTGRES_PASSWORD:-homelab123}@${PLATFORM_HOST:-192.168.1.10}:5432/homelab_db
+      - MINIO_ENDPOINT=${PLATFORM_HOST:-192.168.1.10}:9000
+
+  # --- Frontend Dashboard (Next.js) ---
+  frontend:
+    image: ${REGISTRY_HOST:-192.168.1.10:5000}/frontend:${FRONTEND_TAG:-latest}
+    container_name: app_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://${PLATFORM_HOST:-192.168.1.10}:8000
+
+  # --- IAM Service (Keycloak) ---
+  iam-keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: app_keycloak
+    restart: always
+    command: start-dev --import-realm
+    ports:
+      - "8080:8080"
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin_password}
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://${PLATFORM_HOST:-192.168.1.10}:5432/keycloak_db
+      - KC_DB_USERNAME=${POSTGRES_USER:-homelab}
+      - KC_DB_PASSWORD=${POSTGRES_PASSWORD:-homelab123}
+    volumes:
+      - ../../services/apps/iam-keycloak/realm-config:/opt/keycloak/data/import
+
+  # --- Bus Scraper Service ---
+  bus-scraper:
+    image: ${REGISTRY_HOST:-192.168.1.10:5000}/bus-scraper:${BUS_SCRAPER_TAG:-latest}
+    container_name: app_bus_scraper
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Kolkata
+    volumes:
+      - bus_scraper_exports:/app/exports
+      - bus_scraper_debug:/app/debug_snapshots
+
+  # --- Android Health Ingester ---
+  health-ingester:
+    image: ${REGISTRY_HOST:-192.168.1.10:5000}/health-ingester:${HEALTH_INGESTER_TAG:-latest}
+    container_name: app_health_ingester
+    restart: always
+    ports:
+      - "8001:8001"
+    environment:
+      - MINIO_ENDPOINT=${PLATFORM_HOST:-192.168.1.10}:9000
+
+  # --- Balcony Irrigation MQTT Client ---
+  irrigation-mqtt:
+    image: ${REGISTRY_HOST:-192.168.1.10:5000}/irrigation-mqtt:${IRRIGATION_MQTT_TAG:-latest}
+    container_name: app_irrigation_mqtt
+    restart: always
+    environment:
+      - MQTT_BROKER_HOST=${PLATFORM_HOST:-192.168.1.10}
+      - MQTT_BROKER_PORT=1883
+      - MINIO_ENDPOINT=${PLATFORM_HOST:-192.168.1.10}:9000
+
+volumes:
+  bus_scraper_exports:
+  bus_scraper_debug:

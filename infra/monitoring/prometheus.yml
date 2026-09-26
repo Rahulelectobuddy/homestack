@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'backend'
+    static_configs:
+      - targets: ['app_backend:8000']
+
+  - job_name: 'health-ingester'
+    static_configs:
+      - targets: ['app_health_ingester:8001']
+
+  - job_name: 'airflow'
+    static_configs:
+      - targets: ['airflow_webserver:8080']

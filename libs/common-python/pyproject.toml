@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "homelab-common"
+version = "0.1.0"
+description = "Shared Python utilities for Homelab Data Platform services"
+authors = [{ name = "Homelab Engineer" }]
+dependencies = [
+    "paho-mqtt>=1.6.1",
+    "minio>=7.2.0",
+    "pandas>=2.2.0",
+    "pyarrow>=15.0.0"
+]
