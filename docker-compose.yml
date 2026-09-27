@@ -63,7 +63,7 @@ services:
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
     ports:
       - "8080:8080"
-    command: webserver
+    command: bash -c "airflow db migrate && exec airflow webserver"
     volumes:
       - ./services/platform/airflow/dags:/opt/airflow/dags
 
@@ -77,7 +77,7 @@ services:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-homelab}:${POSTGRES_PASSWORD:-homelab123}@postgres:5432/homelab_db
       - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-46THtBPh6AK24V459wHgq_p7p4W8Vp09K3w3Q_9z4E0=}
-    command: scheduler
+    command: bash -c "airflow db migrate && exec airflow scheduler"
     volumes:
       - ./services/platform/airflow/dags:/opt/airflow/dags
 
