@@ -3,6 +3,13 @@ name: Deploy Unified Homelab Data Platform
 on:
   push:
     branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip post-deployment validation tests'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-homelab
@@ -30,7 +37,9 @@ jobs:
           docker compose up -d
 
       - name: Run Post-Deployment Validation Suite
+        if: ${{ inputs.skip_tests != true }}
         run: |
           chmod +x scripts/test-stack.sh
           ./scripts/test-stack.sh 192.168.1.29
+
 

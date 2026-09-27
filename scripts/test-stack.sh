@@ -18,6 +18,11 @@ echo -n "  - Backend API (/health)... "
 BACKEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$HOST:8000/health || echo "000")
 if [ "$BACKEND_STATUS" -eq 200 ]; then echo "✅ OK"; else echo "❌ FAILED ($BACKEND_STATUS)"; exit 1; fi
 
+# Bus Fares Analytics API
+echo -n "  - Bus Fares Analytics API (/api/v1/analytics/bus-fares)... "
+BUS_FARES_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$HOST:8000/api/v1/analytics/bus-fares || echo "000")
+if [ "$BUS_FARES_STATUS" -eq 200 ]; then echo "✅ OK"; else echo "❌ FAILED ($BUS_FARES_STATUS)"; exit 1; fi
+
 # Health Ingester
 echo -n "  - Health Ingester (/health)... "
 INGESTER_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$HOST:8001/health || echo "000")

@@ -11,9 +11,15 @@ export default function Home() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.5rem" }}>
         <div style={{ background: "#1e293b", padding: "1.5rem", borderRadius: "8px", border: "1px solid #334155" }}>
           <h3 style={{ color: "#f1f5f9", marginTop: 0 }}>Bus Fare Scraper</h3>
-          <p style={{ color: "#94a3b8" }}>Status: Active (Every 3h)</p>
-          <span style={{ background: "#065f46", color: "#34d399", padding: "0.25rem 0.5rem", borderRadius: "4px", fontSize: "0.875rem" }}>Healthy</span>
+          <p style={{ color: "#94a3b8" }}>Status: Active (Pune ➔ Indore)</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1rem" }}>
+            <span style={{ background: "#065f46", color: "#34d399", padding: "0.25rem 0.5rem", borderRadius: "4px", fontSize: "0.875rem" }}>Healthy</span>
+            <a href="/bus-fares" style={{ color: "#38bdf8", textDecoration: "none", fontSize: "0.875rem", fontWeight: 600 }}>
+              View Analytics Dashboard ➔
+            </a>
+          </div>
         </div>
+
         
         <div style={{ background: "#1e293b", padding: "1.5rem", borderRadius: "8px", border: "1px solid #334155" }}>
           <h3 style={{ color: "#f1f5f9", marginTop: 0 }}>Balcony Irrigation</h3>
