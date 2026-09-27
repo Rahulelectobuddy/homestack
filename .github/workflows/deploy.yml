@@ -3,11 +3,6 @@ name: Deploy Unified Homelab Data Platform
 on:
   push:
     branches: [ main, master ]
-    paths:
-      - 'services/**'
-      - 'libs/**'
-      - 'infra/**'
-      - 'docker-compose.yml'
 
 concurrency:
   group: deploy-homelab
