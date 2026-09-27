@@ -63,7 +63,7 @@ services:
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
     ports:
       - "8080:8080"
-    command: bash -c "airflow db migrate && exec airflow webserver"
+    command: bash -c "airflow db migrate && airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@homelab.local --password admin 2>/dev/null || true; exec airflow webserver"
     volumes:
       - ./services/platform/airflow/dags:/opt/airflow/dags
 
