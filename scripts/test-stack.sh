@@ -11,32 +11,32 @@ sleep 5
 echo "🔍 [1/5] Checking container status..."
 docker compose ps
 
-echo "🌐 [2/5] Testing HTTP Service Endpoints..."
+echo "🌐 [2/5] Testing HTTP Service Endpoints (with retry warm-up)..."
 
-# Backend API
-echo -n "  - Backend API (/health)... "
-BACKEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$HOST:8000/health || echo "000")
-if [ "$BACKEND_STATUS" -eq 200 ]; then echo "✅ OK"; else echo "❌ FAILED ($BACKEND_STATUS)"; exit 1; fi
+check_endpoint() {
+  local name="$1"
+  local url="$2"
+  local retries=${3:-6}
+  local delay=${4:-5}
 
-# Bus Fares Analytics API
-echo -n "  - Bus Fares Analytics API (/api/v1/analytics/bus-fares)... "
-BUS_FARES_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$HOST:8000/api/v1/analytics/bus-fares || echo "000")
-if [ "$BUS_FARES_STATUS" -eq 200 ]; then echo "✅ OK"; else echo "❌ FAILED ($BUS_FARES_STATUS)"; exit 1; fi
+  echo -n "  - $name... "
+  for i in $(seq 1 $retries); do
+    STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$url" || echo "000")
+    if [ "$STATUS" -eq 200 ]; then
+      echo "✅ OK"
+      return 0
+    fi
+    sleep $delay
+  done
+  echo "❌ FAILED ($STATUS)"
+  exit 1
+}
 
-# Health Ingester
-echo -n "  - Health Ingester (/health)... "
-INGESTER_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$HOST:8001/health || echo "000")
-if [ "$INGESTER_STATUS" -eq 200 ]; then echo "✅ OK"; else echo "❌ FAILED ($INGESTER_STATUS)"; exit 1; fi
-
-# Airflow Webserver
-echo -n "  - Airflow Webserver (/health)... "
-AIRFLOW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$HOST:8080/health || echo "000")
-if [ "$AIRFLOW_STATUS" -eq 200 ]; then echo "✅ OK"; else echo "❌ FAILED ($AIRFLOW_STATUS)"; exit 1; fi
-
-# Frontend App
-echo -n "  - Frontend App (/)... "
-FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$HOST:3000/ || echo "000")
-if [ "$FRONTEND_STATUS" -eq 200 ]; then echo "✅ OK"; else echo "❌ FAILED ($FRONTEND_STATUS)"; exit 1; fi
+check_endpoint "Backend API (/health)" "http://$HOST:8000/health"
+check_endpoint "Bus Fares Analytics API (/api/v1/analytics/bus-fares)" "http://$HOST:8000/api/v1/analytics/bus-fares"
+check_endpoint "Health Ingester (/health)" "http://$HOST:8001/health"
+check_endpoint "Airflow Webserver (/health)" "http://$HOST:8080/health" 10 5
+check_endpoint "Frontend App (/)" "http://$HOST:3000/"
 
 echo "📥 [3/5] Testing Health Ingester -> MinIO Data Lake Ingestion..."
 HEALTH_RESP=$(curl -s -X POST http://$HOST:8001/api/v1/health-data \
