@@ -16,7 +16,8 @@ class DataLakeWriter:
         """Initialize S3 client connection to MinIO data lake endpoint.
         
         Args:
-            minio_endpoint: MinIO server hostname and port (e.g. 'minio:9000' or '192.168.1.10:9000').
+            minio_endpoint: MinIO server hostname and port (e.g. 'minio:9000' or '192.168.1.29:9000').
+
             access_key: MinIO root access key credential.
             secret_key: MinIO root secret key credential.
             secure: Use HTTPS if True, HTTP if False.

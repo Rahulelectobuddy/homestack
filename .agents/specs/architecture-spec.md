@@ -1,7 +1,8 @@
 # Specification: Two-VM Homelab System Architecture
 
 ## Target Hardware Specifications
-- **Platform VM**: `8GB RAM`, 4 CPU Cores, Local LAN IP `192.168.1.10`.
+- **Platform VM**: `8GB RAM`, 4 CPU Cores, Local LAN IP `192.168.1.29`.
+
 - **App VM**: `4GB RAM`, 2 CPU Cores, Local LAN IP `192.168.1.11`.
 
 ## Service Port Allocation Matrix

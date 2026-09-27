@@ -69,7 +69,8 @@ When creating a new service (e.g. `services/apps/my-new-ingester`):
    - `.env.example`: Sample environment variables.
    - `migrations/`: Service-specific SQL or Alembic migration scripts.
    - `README.md`: Explaining purpose and endpoints.
-3. **Register in Docker Compose**: Add the service to `infra/apps/docker-compose.yml` or `infra/platform/docker-compose.yml` referencing `${REGISTRY_HOST:-192.168.1.10:5000}/my-new-ingester:${TAG:-latest}`.
+3. **Register in Docker Compose**: Add the service to `infra/apps/docker-compose.yml` or `infra/platform/docker-compose.yml` referencing `${REGISTRY_HOST:-192.168.1.29:5000}/my-new-ingester:${TAG:-latest}`.
+
 4. **Update GitHub Workflows**: Add path filters to `.github/workflows/ci.yml` and `.github/workflows/deploy-apps.yml`.
 
 ---
