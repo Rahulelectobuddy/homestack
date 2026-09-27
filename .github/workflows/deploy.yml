@@ -33,3 +33,9 @@ jobs:
       - name: Deploy Containers via Docker Compose
         run: |
           docker compose up -d
+
+      - name: Run Post-Deployment Validation Suite
+        run: |
+          chmod +x scripts/test-stack.sh
+          ./scripts/test-stack.sh 192.168.1.29
+

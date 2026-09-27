@@ -2,12 +2,13 @@
 
 REGISTRY ?= localhost:5000
 
-.PHONY: help build-all deploy status stop logs restart
+.PHONY: help build-all deploy status stop logs restart test
 
 help:
 	@echo "Homelab Data Platform Helper Commands:"
 	@echo "  make build-all   Build and push all container images to local registry"
 	@echo "  make deploy      Deploy full unified platform and app stack"
+	@echo "  make test        Run automated post-deployment validation suite"
 	@echo "  make status      Check running container status"
 	@echo "  make stop        Stop all containers"
 	@echo "  make restart     Restart all containers"
@@ -19,6 +20,12 @@ build-all:
 
 deploy:
 	docker compose up -d
+	@chmod +x scripts/test-stack.sh
+	./scripts/test-stack.sh 192.168.1.29
+
+test:
+	@chmod +x scripts/test-stack.sh
+	./scripts/test-stack.sh 192.168.1.29
 
 status:
 	docker compose ps
@@ -31,3 +38,4 @@ restart:
 
 logs:
 	docker compose logs -f --tail=100
+
