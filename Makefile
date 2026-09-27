@@ -1,25 +1,33 @@
-# Homelab Data Platform Control Makefile
+# Homelab Data Platform Unified Makefile
 
 REGISTRY ?= localhost:5000
 
-.PHONY: help build-all deploy-platform deploy-apps status
+.PHONY: help build-all deploy status stop logs restart
 
 help:
 	@echo "Homelab Data Platform Helper Commands:"
-	@echo "  make build-all        Build and push all container images to local registry"
-	@echo "  make deploy-platform  Deploy platform containers on 8GB VM"
-	@echo "  make deploy-apps      Pull and start app containers on 4GB VM"
-	@echo "  make status           Check platform container status"
+	@echo "  make build-all   Build and push all container images to local registry"
+	@echo "  make deploy      Deploy full unified platform and app stack"
+	@echo "  make status      Check running container status"
+	@echo "  make stop        Stop all containers"
+	@echo "  make restart     Restart all containers"
+	@echo "  make logs        View live container logs"
 
 build-all:
 	@chmod +x scripts/build-and-push-all.sh
 	./scripts/build-and-push-all.sh $(REGISTRY)
 
-deploy-platform:
-	cd infra/platform && docker compose up -d
-
-deploy-apps:
-	cd infra/apps && docker compose pull && docker compose up -d
+deploy:
+	docker compose up -d
 
 status:
-	cd infra/platform && docker compose ps
+	docker compose ps
+
+stop:
+	docker compose down
+
+restart:
+	docker compose restart
+
+logs:
+	docker compose logs -f --tail=100

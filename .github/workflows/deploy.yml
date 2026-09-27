@@ -1,0 +1,35 @@
+name: Deploy Unified Homelab Data Platform
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'services/**'
+      - 'libs/**'
+      - 'infra/**'
+      - 'docker-compose.yml'
+
+concurrency:
+  group: deploy-homelab
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy Unified Stack (Host 192.168.1.29)
+    runs-on: self-hosted
+    env:
+      REGISTRY: localhost:5000
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build & Push All Service Images
+        run: |
+          chmod +x scripts/build-and-push-all.sh
+          ./scripts/build-and-push-all.sh localhost:5000
+
+      - name: Deploy Containers via Docker Compose
+        run: |
+          docker compose up -d

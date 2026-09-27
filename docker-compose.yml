@@ -1,0 +1,197 @@
+services:
+  # --- Local Docker Registry ---
+  registry:
+    image: registry:2
+    container_name: local_registry
+    restart: always
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+
+  # --- Shared Database ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-homelab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-homelab123}
+      POSTGRES_DB: ${POSTGRES_DB:-homelab_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # --- Object Storage (Data Lake) ---
+  minio:
+    image: coollabsio/minio:latest
+    container_name: minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  # --- MQTT Broker ---
+  mqtt-broker:
+    image: eclipse-mosquitto:2.0
+    container_name: mqtt_broker
+    restart: always
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./services/platform/mqtt-broker/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+
+  # --- Airflow Orchestration ---
+  airflow-webserver:
+    image: ${REGISTRY_HOST:-localhost:5000}/airflow:${AIRFLOW_TAG:-latest}
+    container_name: airflow_webserver
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-homelab}:${POSTGRES_PASSWORD:-homelab123}@postgres:5432/homelab_db
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-46THtBPh6AK24V459wHgq_p7p4W8Vp09K3w3Q_9z4E0=}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    ports:
+      - "8080:8080"
+    command: webserver
+    volumes:
+      - ./services/platform/airflow/dags:/opt/airflow/dags
+
+  airflow-scheduler:
+    image: ${REGISTRY_HOST:-localhost:5000}/airflow:${AIRFLOW_TAG:-latest}
+    container_name: airflow_scheduler
+    restart: always
+    depends_on:
+      - airflow-webserver
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-homelab}:${POSTGRES_PASSWORD:-homelab123}@postgres:5432/homelab_db
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-46THtBPh6AK24V459wHgq_p7p4W8Vp09K3w3Q_9z4E0=}
+    command: scheduler
+    volumes:
+      - ./services/platform/airflow/dags:/opt/airflow/dags
+
+  # --- Backend REST API ---
+  backend:
+    image: ${REGISTRY_HOST:-localhost:5000}/backend:${BACKEND_TAG:-latest}
+    container_name: app_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-homelab}:${POSTGRES_PASSWORD:-homelab123}@postgres:5432/homelab_db
+      - MINIO_ENDPOINT=minio:9000
+
+  # --- Frontend Dashboard (Next.js) ---
+  frontend:
+    image: ${REGISTRY_HOST:-localhost:5000}/frontend:${FRONTEND_TAG:-latest}
+    container_name: app_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://192.168.1.29:8000
+
+  # --- IAM Service (Keycloak) ---
+  iam-keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: app_keycloak
+    restart: always
+    command: start-dev --import-realm
+    ports:
+      - "8085:8080"
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin_password}
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/homelab_db
+      - KC_DB_USERNAME=${POSTGRES_USER:-homelab}
+      - KC_DB_PASSWORD=${POSTGRES_PASSWORD:-homelab123}
+    volumes:
+      - ./services/apps/iam-keycloak/realm-config:/opt/keycloak/data/import
+
+  # --- Bus Scraper Service ---
+  bus-scraper:
+    image: ${REGISTRY_HOST:-localhost:5000}/bus-scraper:${BUS_SCRAPER_TAG:-latest}
+    container_name: app_bus_scraper
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Kolkata
+      - MINIO_ENDPOINT=minio:9000
+    volumes:
+      - bus_scraper_exports:/app/exports
+      - bus_scraper_debug:/app/debug_snapshots
+
+  # --- Android Health Ingester ---
+  health-ingester:
+    image: ${REGISTRY_HOST:-localhost:5000}/health-ingester:${HEALTH_INGESTER_TAG:-latest}
+    container_name: app_health_ingester
+    restart: always
+    ports:
+      - "8001:8001"
+    environment:
+      - MINIO_ENDPOINT=minio:9000
+
+  # --- Balcony Irrigation MQTT Client ---
+  irrigation-mqtt:
+    image: ${REGISTRY_HOST:-localhost:5000}/irrigation-mqtt:${IRRIGATION_MQTT_TAG:-latest}
+    container_name: app_irrigation_mqtt
+    restart: always
+    environment:
+      - MQTT_BROKER_HOST=mqtt-broker
+      - MQTT_BROKER_PORT=1883
+      - MINIO_ENDPOINT=minio:9000
+
+  # --- Monitoring Stack ---
+  prometheus:
+    image: prom/prometheus:v2.49.1
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: loki
+    restart: always
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infra/monitoring/loki-config.yml:/etc/loki/local-config.yaml
+
+  grafana:
+    image: grafana/grafana:10.3.1
+    container_name: grafana
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  registry_data:
+  postgres_data:
+  minio_data:
+  mosquitto_data:
+  prometheus_data:
+  grafana_data:
+  bus_scraper_exports:
+  bus_scraper_debug:
