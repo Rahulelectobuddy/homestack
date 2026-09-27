@@ -2,7 +2,8 @@ name: Deploy Platform VM Services
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main, master ]
+
     paths:
       - 'services/platform/**'
       - 'infra/platform/**'

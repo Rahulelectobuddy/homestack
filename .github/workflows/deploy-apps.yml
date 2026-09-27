@@ -2,7 +2,8 @@ name: Deploy App VM Services
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main, master ]
+
     paths:
       - 'services/apps/**'
       - 'infra/apps/**'
