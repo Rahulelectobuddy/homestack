@@ -27,6 +27,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Ensure Local Docker Registry is Up
+        run: |
+          docker compose up -d registry
+
       - name: Build & Push All Service Images
         run: |
           chmod +x scripts/build-and-push-all.sh

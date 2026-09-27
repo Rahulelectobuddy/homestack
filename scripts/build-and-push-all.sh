@@ -5,6 +5,11 @@ REGISTRY=${1:-"localhost:5000"}
 
 echo "🚀 Building & Pushing all Homelab Platform & App images to registry: $REGISTRY..."
 
+if [ "$REGISTRY" = "localhost:5000" ] || [ "$REGISTRY" = "127.0.0.1:5000" ]; then
+  echo "🐳 Ensuring local Docker registry container is active..."
+  docker compose up -d registry
+fi
+
 echo "📦 [1/6] Airflow..."
 docker build -f services/platform/airflow/Dockerfile -t ${REGISTRY}/airflow:latest .
 docker push ${REGISTRY}/airflow:latest
