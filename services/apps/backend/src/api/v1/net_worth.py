@@ -1,24 +1,51 @@
-from ...core.net_worth import (
-    NetWorthSummaryOut,
-    AccountBalanceCreate,
-    AccountBalanceUpdate,
-    AccountBalanceOut,
-    AccountAuditLogOut,
-    BulkSpecialAssetUpdate,
-    SpecialAssetHoldingOut,
-    ProjectionsDataOut,
-    NetWorthSnapshotOut,
-    fetch_all_accounts,
-    add_account,
-    update_account_by_id,
-    delete_account_by_id,
-    fetch_audit_logs,
-    save_net_worth_snapshot,
-    fetch_special_holdings,
-    update_special_holdings,
-    calculate_net_worth_summary,
-    get_projection_vs_actual_data,
-)
+from fastapi import APIRouter, HTTPException, status
+from typing import List, Dict, Any, Optional
+
+try:
+    from core.net_worth import (
+        NetWorthSummaryOut,
+        AccountBalanceCreate,
+        AccountBalanceUpdate,
+        AccountBalanceOut,
+        AccountAuditLogOut,
+        BulkSpecialAssetUpdate,
+        SpecialAssetHoldingOut,
+        ProjectionsDataOut,
+        NetWorthSnapshotOut,
+        fetch_all_accounts,
+        add_account,
+        update_account_by_id,
+        delete_account_by_id,
+        fetch_audit_logs,
+        save_net_worth_snapshot,
+        fetch_special_holdings,
+        update_special_holdings,
+        calculate_net_worth_summary,
+        get_projection_vs_actual_data,
+    )
+except ImportError:
+    from ...core.net_worth import (
+        NetWorthSummaryOut,
+        AccountBalanceCreate,
+        AccountBalanceUpdate,
+        AccountBalanceOut,
+        AccountAuditLogOut,
+        BulkSpecialAssetUpdate,
+        SpecialAssetHoldingOut,
+        ProjectionsDataOut,
+        NetWorthSnapshotOut,
+        fetch_all_accounts,
+        add_account,
+        update_account_by_id,
+        delete_account_by_id,
+        fetch_audit_logs,
+        save_net_worth_snapshot,
+        fetch_special_holdings,
+        update_special_holdings,
+        calculate_net_worth_summary,
+        get_projection_vs_actual_data,
+    )
+
 
 router = APIRouter(prefix="/api/v1/net-worth", tags=["Net Worth Tracker"])
 
@@ -68,8 +95,6 @@ async def update_net_worth_account(account_id: int, account_update: AccountBalan
             detail=f"Account with ID {account_id} not found"
         )
     return AccountBalanceOut(**updated)
-
-
 
 
 @router.post("/refresh", response_model=NetWorthSummaryOut)

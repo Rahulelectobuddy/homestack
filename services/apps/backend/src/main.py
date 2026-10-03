@@ -1,4 +1,5 @@
 import os
+import sys
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI, Query
@@ -7,13 +8,18 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 
-# Import Net Worth router and DB initialization
+# Ensure src directory is in sys.path for relative and absolute imports
+_src_dir = os.path.dirname(os.path.abspath(__file__))
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
+
 try:
-    from src.api.v1.net_worth import router as net_worth_router
-    from src.core.net_worth import init_db_tables
-except ImportError:
     from api.v1.net_worth import router as net_worth_router
     from core.net_worth import init_db_tables
+except ImportError:
+    from src.api.v1.net_worth import router as net_worth_router
+    from src.core.net_worth import init_db_tables
+
 
 app = FastAPI(
     title="Homelab Data Platform API",
