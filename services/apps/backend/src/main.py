@@ -7,11 +7,26 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 
+# Import Net Worth router and DB initialization
+try:
+    from src.api.v1.net_worth import router as net_worth_router
+    from src.core.net_worth import init_db_tables
+except ImportError:
+    from api.v1.net_worth import router as net_worth_router
+    from core.net_worth import init_db_tables
+
 app = FastAPI(
     title="Homelab Data Platform API",
-    description="Backend API service for serving analytics, managing ingesters, and serving frontend requests.",
+    description="Backend API service for serving analytics, managing ingesters, net worth engine, and serving frontend requests.",
     version="0.1.0"
 )
+
+app.include_router(net_worth_router)
+
+@app.on_event("startup")
+async def on_startup():
+    init_db_tables()
+
 
 app.add_middleware(
     CORSMiddleware,
