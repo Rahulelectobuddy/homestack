@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import NetWorthManagerModal, { AccountBalance, SpecialAssetHolding } from "./NetWorthManagerModal";
+import ProjectionChart from "./ProjectionChart";
+
 
 export interface NetWorthSummaryData {
   net_worth_inr: number;
@@ -373,6 +375,9 @@ export default function NetWorthWidget() {
           <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Net Monthly Return Yield</div>
         </div>
       </div>
+
+      {/* Projection vs Actual Time-Series Graph */}
+      <ProjectionChart />
 
       {/* Live 4-Asset Market Ticker */}
       <h3 style={{ margin: "0 0 1rem", fontSize: "1.1rem", fontWeight: 700, color: "#cbd5e1" }}>

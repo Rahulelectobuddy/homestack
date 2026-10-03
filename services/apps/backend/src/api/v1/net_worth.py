@@ -7,12 +7,14 @@ from ...core.net_worth import (
     AccountBalanceOut,
     BulkSpecialAssetUpdate,
     SpecialAssetHoldingOut,
+    ProjectionsDataOut,
     fetch_all_accounts,
     add_account,
     delete_account_by_id,
     fetch_special_holdings,
     update_special_holdings,
     calculate_net_worth_summary,
+    get_projection_vs_actual_data,
 )
 
 router = APIRouter(prefix="/api/v1/net-worth", tags=["Net Worth Tracker"])
@@ -24,6 +26,15 @@ async def get_net_worth_summary():
     Returns full Net Worth aggregation, account breakdown, and current live investment valuations.
     """
     return await calculate_net_worth_summary(force_refresh_market=False)
+
+
+@router.get("/projections", response_model=ProjectionsDataOut)
+async def get_net_worth_projections():
+    """
+    Returns Projection vs Actual time-series trajectory over a 12-month window.
+    """
+    return await get_projection_vs_actual_data()
+
 
 
 @router.post("/refresh", response_model=NetWorthSummaryOut)

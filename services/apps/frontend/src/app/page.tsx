@@ -1,26 +1,28 @@
 import React from "react";
-import NetWorthWidget from "../components/NetWorthWidget";
+import NetWorthTile from "../components/NetWorthTile";
 
 export default function Home() {
   return (
     <main style={{ padding: "2rem", maxWidth: "1250px", margin: "0 auto" }}>
-      <header style={{ marginBottom: "1.5rem", borderBottom: "1px solid #334155", paddingBottom: "1rem" }}>
+      <header style={{ marginBottom: "2rem", borderBottom: "1px solid #334155", paddingBottom: "1rem" }}>
         <h1 style={{ color: "#38bdf8", margin: 0 }}>Homelab Data Platform</h1>
         <p style={{ color: "#94a3b8" }}>Central financial engine, analytics, ingestion monitoring, and system metrics</p>
       </header>
 
-      {/* Production-Grade Net Worth Tracker & Financial Engine Widget */}
-      <NetWorthWidget />
-
-      <h2 style={{ color: "#f8fafc", marginTop: "2.5rem", marginBottom: "1rem", fontSize: "1.25rem" }}>
-        📊 System Services & Analytics
+      <h2 style={{ color: "#f8fafc", marginBottom: "1.25rem", fontSize: "1.25rem" }}>
+        📊 Services & Financial Dashboards
       </h2>
       
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.5rem" }}>
-        <div style={{ background: "#1e293b", padding: "1.5rem", borderRadius: "12px", border: "1px solid #334155" }}>
-          <h3 style={{ color: "#f1f5f9", marginTop: 0 }}>Bus Fare Scraper</h3>
-          <p style={{ color: "#94a3b8" }}>Status: Active (Pune ➔ Indore)</p>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1rem" }}>
+        {/* Dashboard Tile for Net Worth Tracker & Financial Engine */}
+        <NetWorthTile />
+
+        <div style={{ background: "#1e293b", padding: "1.5rem", borderRadius: "12px", border: "1px solid #334155", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ color: "#f1f5f9", marginTop: 0 }}>Bus Fare Scraper</h3>
+            <p style={{ color: "#94a3b8" }}>Status: Active (Pune ➔ Indore)</p>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1.5rem" }}>
             <span style={{ background: "#065f46", color: "#34d399", padding: "0.25rem 0.5rem", borderRadius: "4px", fontSize: "0.875rem" }}>Healthy</span>
             <a href="/bus-fares" style={{ color: "#38bdf8", textDecoration: "none", fontSize: "0.875rem", fontWeight: 600 }}>
               View Analytics Dashboard ➔
