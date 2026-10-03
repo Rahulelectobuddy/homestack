@@ -59,34 +59,42 @@ async def _fetch_usd_inr_rate(client: httpx.AsyncClient, fallback: float) -> flo
 async def _fetch_metals_prices(client: httpx.AsyncClient, usd_inr: float) -> tuple[float, float]:
     """
     Fetch Gold (10g) & Silver (1kg) rates in INR.
-    Tries free APIs, falls back to estimated spot-based rates or fallback constants.
+    Tries free APIs, validates unit scale, and falls back to standard Indian retail rate constants.
     """
     gold_fallback = FALLBACK_PRICES["gold_10g_inr"]
     silver_fallback = FALLBACK_PRICES["silver_1kg_inr"]
 
     try:
-        # Try fetching spot metals in USD (e.g. from free gold-api)
         resp_gold = await client.get("https://api.gold-api.com/price/XAU", timeout=4.0)
         resp_silver = await client.get("https://api.gold-api.com/price/XAG", timeout=4.0)
 
         gold_usd_oz = None
-        silver_usd_oz = None
+        silver_usd = None
 
         if resp_gold.status_code == 200:
             gold_usd_oz = resp_gold.json().get("price")
         if resp_silver.status_code == 200:
-            silver_usd_oz = resp_silver.json().get("price")
+            silver_usd = resp_silver.json().get("price")
 
         if gold_usd_oz and usd_inr > 0:
-            # 1 troy oz = 31.1034768 grams. 10g = (gold_usd_oz / 31.1034768) * 10 * usd_inr
-            # Add approx local import duty/GST multiplier (~1.15 in India)
-            gold_10g = (float(gold_usd_oz) / 31.1034768) * 10.0 * usd_inr * 1.15
-            gold_fallback = round(gold_10g, 2)
+            val = float(gold_usd_oz)
+            if val > 500:  # Valid USD price per troy oz
+                # 1 troy oz = 31.1034768g. 10g = (val / 31.1034768) * 10 * usd_inr * 1.15 (import duty/GST)
+                gold_10g = (val / 31.1034768) * 10.0 * usd_inr * 1.15
+                gold_fallback = round(gold_10g, 2)
 
-        if silver_usd_oz and usd_inr > 0:
-            # 1 troy oz = 0.0311034768 kg. 1kg = (silver_usd_oz / 0.0311034768) * usd_inr * 1.15
-            silver_1kg = (float(silver_usd_oz) / 31.1034768) * usd_inr * 1.15
-            silver_fallback = round(silver_1kg, 2)
+        if silver_usd and usd_inr > 0:
+            val = float(silver_usd)
+            # 1 KG = 32.1507466 troy oz
+            if val > 10.0:  # Price per troy oz (e.g. $30/oz)
+                silver_1kg_usd = val * 32.1507466
+            else:  # Price per gram (e.g. $0.98/g)
+                silver_1kg_usd = val * 1000.0
+
+            silver_1kg_inr = silver_1kg_usd * usd_inr * 1.12  # Add local Indian retail tax/duty factor
+            if silver_1kg_inr >= 50000:  # Sanity check for 1kg Indian Silver rate
+                silver_fallback = round(silver_1kg_inr, 2)
+
     except Exception as e:
         logger.warning(f"Metals API lookup note: using standard rates or fallback ({e})")
 

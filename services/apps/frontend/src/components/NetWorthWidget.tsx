@@ -99,6 +99,17 @@ export default function NetWorthWidget() {
     await fetchSummary();
   };
 
+  const handleUpdateAccount = async (id: number, acc: { account_name?: string; account_type?: "asset" | "liability"; balance_inr?: number; monthly_return_pct?: number; change_reason?: string }) => {
+    const url = `${getApiBaseUrl()}/api/v1/net-worth/accounts/${id}`;
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(acc),
+    });
+    if (!res.ok) throw new Error("Failed to update account");
+    await fetchSummary();
+  };
+
   const handleUpdateSpecialAssets = async (holdings: { uber_stock: number; accenture_stock: number; gold_10g: number; silver_1kg: number }) => {
     const url = `${getApiBaseUrl()}/api/v1/net-worth/assets`;
     const res = await fetch(url, {
@@ -455,6 +466,7 @@ export default function NetWorthWidget() {
         accounts={summary.accounts}
         specialAssets={summary.special_investments_breakdown}
         onAddAccount={handleAddAccount}
+        onUpdateAccount={handleUpdateAccount}
         onDeleteAccount={handleDeleteAccount}
         onUpdateSpecialAssets={handleUpdateSpecialAssets}
       />

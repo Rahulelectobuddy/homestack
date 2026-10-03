@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export interface AccountBalance {
   id: number;
@@ -21,12 +21,26 @@ export interface SpecialAssetHolding {
   manual_price_override_inr?: number | null;
 }
 
+export interface AccountAuditLog {
+  id: number;
+  account_id: number;
+  account_name: string;
+  action_type: "CREATE" | "UPDATE" | "DELETE";
+  old_balance_inr?: number | null;
+  new_balance_inr?: number | null;
+  old_monthly_return_pct?: number | null;
+  new_monthly_return_pct?: number | null;
+  change_reason?: string | null;
+  changed_at: string;
+}
+
 interface NetWorthManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   accounts: AccountBalance[];
   specialAssets: SpecialAssetHolding[];
   onAddAccount: (acc: { account_name: string; account_type: "asset" | "liability"; balance_inr: number; monthly_return_pct: number }) => Promise<void>;
+  onUpdateAccount: (id: number, acc: { account_name?: string; account_type?: "asset" | "liability"; balance_inr?: number; monthly_return_pct?: number; change_reason?: string }) => Promise<void>;
   onDeleteAccount: (id: number) => Promise<void>;
   onUpdateSpecialAssets: (holdings: { uber_stock: number; accenture_stock: number; gold_10g: number; silver_1kg: number }) => Promise<void>;
 }
@@ -37,17 +51,31 @@ export default function NetWorthManagerModal({
   accounts,
   specialAssets,
   onAddAccount,
+  onUpdateAccount,
   onDeleteAccount,
   onUpdateSpecialAssets,
 }: NetWorthManagerModalProps) {
-  const [activeTab, setActiveTab] = useState<"accounts" | "assets">("accounts");
+  const [activeTab, setActiveTab] = useState<"accounts" | "assets" | "audit">("accounts");
 
-  // Account form state
+  // Account creation form state
   const [accName, setAccName] = useState("");
   const [accType, setAccType] = useState<"asset" | "liability">("asset");
   const [accBalance, setAccBalance] = useState("");
   const [accReturnPct, setAccReturnPct] = useState("");
   const [isSubmittingAccount, setIsSubmittingAccount] = useState(false);
+
+  // Account editing state
+  const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editType, setEditType] = useState<"asset" | "liability">("asset");
+  const [editBalance, setEditBalance] = useState("");
+  const [editReturnPct, setEditReturnPct] = useState("");
+  const [editReason, setEditReason] = useState("");
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState<AccountAuditLog[]>([]);
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
 
   // Asset holdings form state
   const uberHolding = specialAssets.find((a) => a.asset_key === "uber_stock");
@@ -60,6 +88,37 @@ export default function NetWorthManagerModal({
   const [goldQty, setGoldQty] = useState(goldHolding ? goldHolding.quantity.toString() : "0");
   const [silverQty, setSilverQty] = useState(silverHolding ? silverHolding.quantity.toString() : "0");
   const [isSubmittingAssets, setIsSubmittingAssets] = useState(false);
+
+  const getApiBaseUrl = () => {
+    if (typeof window !== "undefined") {
+      const envUrl = process.env.NEXT_PUBLIC_API_URL;
+      if (envUrl) return envUrl;
+      const host = window.location.hostname || "localhost";
+      return `http://${host}:8000`;
+    }
+    return "http://localhost:8000";
+  };
+
+  const fetchAuditLogs = async () => {
+    setLoadingAuditLogs(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/net-worth/audit-logs`);
+      if (res.ok) {
+        const json: AccountAuditLog[] = await res.json();
+        setAuditLogs(json);
+      }
+    } catch (err) {
+      console.error("Failed to fetch audit logs:", err);
+    } finally {
+      setLoadingAuditLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "audit") {
+      fetchAuditLogs();
+    }
+  }, [activeTab]);
 
   if (!isOpen) return null;
 
@@ -82,6 +141,36 @@ export default function NetWorthManagerModal({
       console.error("Error creating account:", err);
     } finally {
       setIsSubmittingAccount(false);
+    }
+  };
+
+  const startEditing = (acc: AccountBalance) => {
+    setEditingAccountId(acc.id);
+    setEditName(acc.account_name);
+    setEditType(acc.account_type);
+    setEditBalance(acc.balance_inr.toString());
+    setEditReturnPct(acc.monthly_return_pct.toString());
+    setEditReason("Monthly balance update");
+  };
+
+  const handleEditAccountSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAccountId) return;
+
+    setIsSubmittingEdit(true);
+    try {
+      await onUpdateAccount(editingAccountId, {
+        account_name: editName.trim(),
+        account_type: editType,
+        balance_inr: parseFloat(editBalance) || 0,
+        monthly_return_pct: parseFloat(editReturnPct) || 0,
+        change_reason: editReason.trim() || "Manual edit",
+      });
+      setEditingAccountId(null);
+    } catch (err) {
+      console.error("Error updating account:", err);
+    } finally {
+      setIsSubmittingEdit(false);
     }
   };
 
@@ -133,7 +222,7 @@ export default function NetWorthManagerModal({
           border: "1px solid #334155",
           borderRadius: "16px",
           width: "100%",
-          maxWidth: "750px",
+          maxWidth: "850px",
           maxHeight: "90vh",
           display: "flex",
           flexDirection: "column",
@@ -157,7 +246,7 @@ export default function NetWorthManagerModal({
               ⚙️ Financial Engine & Asset Manager
             </h2>
             <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#94a3b8" }}>
-              Configure bank accounts, loan liabilities, and 4 core investment quantities
+              Edit bank accounts, view audit change history, and manage 4 special investment quantities
             </p>
           </div>
           <button
@@ -215,136 +304,293 @@ export default function NetWorthManagerModal({
           >
             📈 4 Special Investments
           </button>
+          <button
+            onClick={() => setActiveTab("audit")}
+            style={{
+              padding: "0.85rem 1.25rem",
+              background: "transparent",
+              border: "none",
+              borderBottom: activeTab === "audit" ? "3px solid #38bdf8" : "3px solid transparent",
+              color: activeTab === "audit" ? "#38bdf8" : "#94a3b8",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: "0.95rem",
+            }}
+          >
+            📜 Audit History
+          </button>
         </div>
 
         {/* Body Content */}
         <div style={{ padding: "1.5rem", overflowY: "auto", flex: 1 }}>
           {activeTab === "accounts" && (
             <div>
-              {/* Add Account Form */}
-              <form
-                onSubmit={handleCreateAccountSubmit}
-                style={{
-                  background: "#1e293b",
-                  padding: "1.25rem",
-                  borderRadius: "12px",
-                  border: "1px solid #334155",
-                  marginBottom: "1.5rem",
-                }}
-              >
-                <h4 style={{ margin: "0 0 1rem", color: "#f8fafc", fontSize: "1rem" }}>
-                  + Add New Bank Account or Loan Liability
-                </h4>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
-                      Account / Loan Name
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. HDFC Salary, SBI Home Loan"
-                      value={accName}
-                      onChange={(e) => setAccName(e.target.value)}
-                      required
-                      style={{
-                        width: "100%",
-                        padding: "0.6rem 0.75rem",
-                        borderRadius: "6px",
-                        border: "1px solid #475569",
-                        background: "#0f172a",
-                        color: "#f8fafc",
-                        fontSize: "0.9rem",
-                      }}
-                    />
+              {/* Account Edit Modal / Form overlay if editing */}
+              {editingAccountId ? (
+                <form
+                  onSubmit={handleEditAccountSubmit}
+                  style={{
+                    background: "rgba(56, 189, 248, 0.08)",
+                    border: "1.5px solid #0284c7",
+                    padding: "1.25rem",
+                    borderRadius: "12px",
+                    marginBottom: "1.5rem",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
+                    <h4 style={{ margin: 0, color: "#38bdf8" }}>✏️ Edit Account Value & Details</h4>
+                    <button
+                      type="button"
+                      onClick={() => setEditingAccountId(null)}
+                      style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer" }}
+                    >
+                      Cancel
+                    </button>
                   </div>
 
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
-                      Classification Type
-                    </label>
-                    <select
-                      value={accType}
-                      onChange={(e) => setAccType(e.target.value as "asset" | "liability")}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
+                        Account Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        required
+                        style={{
+                          width: "100%",
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid #475569",
+                          background: "#0f172a",
+                          color: "#f8fafc",
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
+                        Classification Type
+                      </label>
+                      <select
+                        value={editType}
+                        onChange={(e) => setEditType(e.target.value as "asset" | "liability")}
+                        style={{
+                          width: "100%",
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid #475569",
+                          background: "#0f172a",
+                          color: "#f8fafc",
+                        }}
+                      >
+                        <option value="asset">Asset (Savings, FD, Mutual Fund)</option>
+                        <option value="liability">Liability (Home Loan, Credit Card)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
+                        Updated Balance (₹ INR)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={editBalance}
+                        onChange={(e) => setEditBalance(e.target.value)}
+                        required
+                        style={{
+                          width: "100%",
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid #475569",
+                          background: "#0f172a",
+                          color: "#f8fafc",
+                          fontWeight: 700,
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
+                        Monthly Expected Return (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={editReturnPct}
+                        onChange={(e) => setEditReturnPct(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid #475569",
+                          background: "#0f172a",
+                          color: "#f8fafc",
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ gridColumn: "span 2" }}>
+                      <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
+                        Reason for Update (Audit History Note)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Monthly salary deposit, interest payment"
+                        value={editReason}
+                        onChange={(e) => setEditReason(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid #475569",
+                          background: "#0f172a",
+                          color: "#f8fafc",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: "1rem", textAlign: "right", display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+                    <button
+                      type="button"
+                      onClick={() => setEditingAccountId(null)}
+                      style={{ background: "#475569", color: "#fff", border: "none", padding: "0.6rem 1rem", borderRadius: "6px", cursor: "pointer" }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingEdit}
+                      style={{ background: "#0284c7", color: "#fff", border: "none", padding: "0.6rem 1.25rem", borderRadius: "6px", fontWeight: 700, cursor: "pointer" }}
+                    >
+                      {isSubmittingEdit ? "Saving..." : "💾 Save Changes"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* Add Account Form */
+                <form
+                  onSubmit={handleCreateAccountSubmit}
+                  style={{
+                    background: "#1e293b",
+                    padding: "1.25rem",
+                    borderRadius: "12px",
+                    border: "1px solid #334155",
+                    marginBottom: "1.5rem",
+                  }}
+                >
+                  <h4 style={{ margin: "0 0 1rem", color: "#f8fafc", fontSize: "1rem" }}>
+                    + Add New Bank Account or Loan Liability
+                  </h4>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
+                        Account / Loan Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. HDFC Salary, SBI Home Loan"
+                        value={accName}
+                        onChange={(e) => setAccName(e.target.value)}
+                        required
+                        style={{
+                          width: "100%",
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid #475569",
+                          background: "#0f172a",
+                          color: "#f8fafc",
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
+                        Classification Type
+                      </label>
+                      <select
+                        value={accType}
+                        onChange={(e) => setAccType(e.target.value as "asset" | "liability")}
+                        style={{
+                          width: "100%",
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid #475569",
+                          background: "#0f172a",
+                          color: "#f8fafc",
+                        }}
+                      >
+                        <option value="asset">Asset (Savings, FD, Mutual Fund)</option>
+                        <option value="liability">Liability (Home Loan, Credit Card)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
+                        Current Balance (₹ INR)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="e.g. 250000"
+                        value={accBalance}
+                        onChange={(e) => setAccBalance(e.target.value)}
+                        required
+                        style={{
+                          width: "100%",
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid #475569",
+                          background: "#0f172a",
+                          color: "#f8fafc",
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
+                        Expected Monthly Return (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="e.g. 0.5 (+0.5%/mo) or 0.75"
+                        value={accReturnPct}
+                        onChange={(e) => setAccReturnPct(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid #475569",
+                          background: "#0f172a",
+                          color: "#f8fafc",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: "1rem", textAlign: "right" }}>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingAccount}
                       style={{
-                        width: "100%",
-                        padding: "0.6rem 0.75rem",
+                        background: "#2563eb",
+                        color: "#ffffff",
+                        border: "none",
+                        padding: "0.6rem 1.25rem",
                         borderRadius: "6px",
-                        border: "1px solid #475569",
-                        background: "#0f172a",
-                        color: "#f8fafc",
-                        fontSize: "0.9rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
                       }}
                     >
-                      <option value="asset">Asset (Savings, FD, Mutual Fund)</option>
-                      <option value="liability">Liability (Home Loan, Credit Card)</option>
-                    </select>
+                      {isSubmittingAccount ? "Saving..." : "+ Add Account"}
+                    </button>
                   </div>
-
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
-                      Current Balance (₹ INR)
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="e.g. 250000"
-                      value={accBalance}
-                      onChange={(e) => setAccBalance(e.target.value)}
-                      required
-                      style={{
-                        width: "100%",
-                        padding: "0.6rem 0.75rem",
-                        borderRadius: "6px",
-                        border: "1px solid #475569",
-                        background: "#0f172a",
-                        color: "#f8fafc",
-                        fontSize: "0.9rem",
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "4px" }}>
-                      Expected Monthly Return (%)
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="e.g. 0.5 (+0.5%/mo) or 0.75"
-                      value={accReturnPct}
-                      onChange={(e) => setAccReturnPct(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "0.6rem 0.75rem",
-                        borderRadius: "6px",
-                        border: "1px solid #475569",
-                        background: "#0f172a",
-                        color: "#f8fafc",
-                        fontSize: "0.9rem",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginTop: "1rem", textAlign: "right" }}>
-                  <button
-                    type="submit"
-                    disabled={isSubmittingAccount}
-                    style={{
-                      background: "#2563eb",
-                      color: "#ffffff",
-                      border: "none",
-                      padding: "0.6rem 1.25rem",
-                      borderRadius: "6px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      fontSize: "0.9rem",
-                    }}
-                  >
-                    {isSubmittingAccount ? "Saving..." : "+ Add Account"}
-                  </button>
-                </div>
-              </form>
+                </form>
+              )}
 
               {/* Accounts Table */}
               <h4 style={{ margin: "0 0 0.75rem", color: "#cbd5e1" }}>Current Accounts & Liabilities</h4>
@@ -359,7 +605,7 @@ export default function NetWorthManagerModal({
                         <th style={{ padding: "0.75rem" }}>Type</th>
                         <th style={{ padding: "0.75rem" }}>Balance (₹)</th>
                         <th style={{ padding: "0.75rem" }}>Monthly Return</th>
-                        <th style={{ padding: "0.75rem", textAlign: "center" }}>Action</th>
+                        <th style={{ padding: "0.75rem", textAlign: "center" }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -387,20 +633,36 @@ export default function NetWorthManagerModal({
                           </td>
                           <td style={{ padding: "0.75rem", color: "#94a3b8" }}>{acc.monthly_return_pct}% / mo</td>
                           <td style={{ padding: "0.75rem", textAlign: "center" }}>
-                            <button
-                              onClick={() => onDeleteAccount(acc.id)}
-                              style={{
-                                background: "#ef4444",
-                                color: "#fff",
-                                border: "none",
-                                padding: "0.3rem 0.6rem",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                                fontSize: "0.8rem",
-                              }}
-                            >
-                              🗑️ Delete
-                            </button>
+                            <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
+                              <button
+                                onClick={() => startEditing(acc)}
+                                style={{
+                                  background: "#0284c7",
+                                  color: "#fff",
+                                  border: "none",
+                                  padding: "0.3rem 0.6rem",
+                                  borderRadius: "4px",
+                                  cursor: "pointer",
+                                  fontSize: "0.8rem",
+                                }}
+                              >
+                                ✏️ Edit
+                              </button>
+                              <button
+                                onClick={() => onDeleteAccount(acc.id)}
+                                style={{
+                                  background: "#ef4444",
+                                  color: "#fff",
+                                  border: "none",
+                                  padding: "0.3rem 0.6rem",
+                                  borderRadius: "4px",
+                                  cursor: "pointer",
+                                  fontSize: "0.8rem",
+                                }}
+                              >
+                                🗑️ Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -414,7 +676,7 @@ export default function NetWorthManagerModal({
           {activeTab === "assets" && (
             <form onSubmit={handleUpdateAssetsSubmit}>
               <p style={{ color: "#94a3b8", fontSize: "0.9rem", marginBottom: "1.25rem" }}>
-                Update quantities for your 4 special investment assets. Real-time market prices & FX rates will automatically calculate total valuations.
+                Update quantities for your 4 special investment assets. Real-time market prices & FX rates automatically calculate total valuations.
               </p>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
@@ -543,13 +805,85 @@ export default function NetWorthManagerModal({
                     borderRadius: "8px",
                     fontWeight: 700,
                     cursor: "pointer",
-                    fontSize: "0.95rem",
                   }}
                 >
                   {isSubmittingAssets ? "Saving Assets..." : "💾 Save Asset Quantities"}
                 </button>
               </div>
             </form>
+          )}
+
+          {activeTab === "audit" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                <h4 style={{ margin: 0, color: "#cbd5e1" }}>📜 Audit Trail of Account Changes</h4>
+                <button
+                  onClick={fetchAuditLogs}
+                  style={{ background: "#334155", color: "#fff", border: "none", padding: "0.3rem 0.75rem", borderRadius: "4px", cursor: "pointer", fontSize: "0.8rem" }}
+                >
+                  🔄 Refresh Logs
+                </button>
+              </div>
+
+              {loadingAuditLogs ? (
+                <div style={{ color: "#94a3b8", fontStyle: "italic" }}>Loading audit history...</div>
+              ) : auditLogs.length === 0 ? (
+                <div style={{ color: "#64748b", fontStyle: "italic" }}>No audit log events recorded yet. Updates and deletions will appear here.</div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                    <thead>
+                      <tr style={{ background: "#1e293b", color: "#94a3b8", textAlign: "left" }}>
+                        <th style={{ padding: "0.6rem" }}>Timestamp</th>
+                        <th style={{ padding: "0.6rem" }}>Account Name</th>
+                        <th style={{ padding: "0.6rem" }}>Action</th>
+                        <th style={{ padding: "0.6rem" }}>Old Balance ➔ New Balance</th>
+                        <th style={{ padding: "0.6rem" }}>Note / Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLogs.map((log) => (
+                        <tr key={log.id} style={{ borderBottom: "1px solid #1e293b" }}>
+                          <td style={{ padding: "0.6rem", color: "#94a3b8" }}>
+                            {log.changed_at ? log.changed_at.substring(0, 16).replace("T", " ") : "-"}
+                          </td>
+                          <td style={{ padding: "0.6rem", fontWeight: 600 }}>{log.account_name}</td>
+                          <td style={{ padding: "0.6rem" }}>
+                            <span
+                              style={{
+                                padding: "0.15rem 0.4rem",
+                                borderRadius: "4px",
+                                fontSize: "0.7rem",
+                                fontWeight: 700,
+                                background:
+                                  log.action_type === "CREATE"
+                                    ? "rgba(16, 185, 129, 0.2)"
+                                    : log.action_type === "UPDATE"
+                                    ? "rgba(56, 189, 248, 0.2)"
+                                    : "rgba(239, 68, 68, 0.2)",
+                                color:
+                                  log.action_type === "CREATE"
+                                    ? "#34d399"
+                                    : log.action_type === "UPDATE"
+                                    ? "#38bdf8"
+                                    : "#f87171",
+                              }}
+                            >
+                              {log.action_type}
+                            </span>
+                          </td>
+                          <td style={{ padding: "0.6rem" }}>
+                            {log.old_balance_inr != null ? formatCurrency(log.old_balance_inr) : "-"} ➔{" "}
+                            {log.new_balance_inr != null ? formatCurrency(log.new_balance_inr) : "-"}
+                          </td>
+                          <td style={{ padding: "0.6rem", color: "#cbd5e1" }}>{log.change_reason || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

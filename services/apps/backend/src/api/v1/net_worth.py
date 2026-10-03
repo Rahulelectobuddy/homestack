@@ -1,16 +1,19 @@
-from fastapi import APIRouter, HTTPException, status
-from typing import List, Dict, Any
-
 from ...core.net_worth import (
     NetWorthSummaryOut,
     AccountBalanceCreate,
+    AccountBalanceUpdate,
     AccountBalanceOut,
+    AccountAuditLogOut,
     BulkSpecialAssetUpdate,
     SpecialAssetHoldingOut,
     ProjectionsDataOut,
+    NetWorthSnapshotOut,
     fetch_all_accounts,
     add_account,
+    update_account_by_id,
     delete_account_by_id,
+    fetch_audit_logs,
+    save_net_worth_snapshot,
     fetch_special_holdings,
     update_special_holdings,
     calculate_net_worth_summary,
@@ -34,6 +37,38 @@ async def get_net_worth_projections():
     Returns Projection vs Actual time-series trajectory over a 12-month window.
     """
     return await get_projection_vs_actual_data()
+
+
+@router.post("/snapshots")
+async def trigger_net_worth_snapshot():
+    """
+    Trigger snapshot creation (invoked weekly by Airflow pipeline).
+    """
+    return await save_net_worth_snapshot()
+
+
+@router.get("/audit-logs", response_model=List[AccountAuditLogOut])
+async def get_account_audit_logs(account_id: Optional[int] = None):
+    """
+    Fetch audit history logs of all changes to bank accounts and loan liabilities.
+    """
+    logs = fetch_audit_logs(account_id=account_id)
+    return [AccountAuditLogOut(**l) for l in logs]
+
+
+@router.put("/accounts/{account_id}", response_model=AccountBalanceOut)
+async def update_net_worth_account(account_id: int, account_update: AccountBalanceUpdate):
+    """
+    Update an existing account balance, type, or monthly return rate and record audit log.
+    """
+    updated = update_account_by_id(account_id, account_update)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Account with ID {account_id} not found"
+        )
+    return AccountBalanceOut(**updated)
+
 
 
 

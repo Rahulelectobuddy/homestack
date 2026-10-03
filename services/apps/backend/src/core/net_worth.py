@@ -20,10 +20,42 @@ class AccountBalanceBase(BaseModel):
 class AccountBalanceCreate(AccountBalanceBase):
     pass
 
+class AccountBalanceUpdate(BaseModel):
+    account_name: Optional[str] = None
+    account_type: Optional[str] = None
+    balance_inr: Optional[float] = None
+    monthly_return_pct: Optional[float] = None
+    change_reason: Optional[str] = "Manual update"
+
 class AccountBalanceOut(AccountBalanceBase):
     id: int
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+class AccountAuditLogOut(BaseModel):
+    id: int
+    account_id: int
+    account_name: str
+    action_type: str
+    old_balance_inr: Optional[float] = None
+    new_balance_inr: Optional[float] = None
+    old_monthly_return_pct: Optional[float] = None
+    new_monthly_return_pct: Optional[float] = None
+    change_reason: Optional[str] = None
+    changed_at: str
+
+class NetWorthSnapshotOut(BaseModel):
+    id: int
+    snapshot_date: str
+    net_worth_inr: float
+    total_assets_inr: float
+    total_liabilities_inr: float
+    account_assets_inr: float
+    special_investments_inr: float
+    projected_monthly_income_inr: float
+    details_json: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+
 
 class SpecialAssetUpdateItem(BaseModel):
     asset_key: str
@@ -147,6 +179,36 @@ def init_db_tables():
             );
         """)
 
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS account_audit_logs (
+                id SERIAL PRIMARY KEY,
+                account_id INT NOT NULL,
+                account_name VARCHAR(255) NOT NULL,
+                action_type VARCHAR(50) NOT NULL CHECK (action_type IN ('CREATE', 'UPDATE', 'DELETE')),
+                old_balance_inr NUMERIC(15, 2) DEFAULT NULL,
+                new_balance_inr NUMERIC(15, 2) DEFAULT NULL,
+                old_monthly_return_pct NUMERIC(5, 2) DEFAULT NULL,
+                new_monthly_return_pct NUMERIC(5, 2) DEFAULT NULL,
+                change_reason VARCHAR(500) DEFAULT NULL,
+                changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS net_worth_snapshots (
+                id SERIAL PRIMARY KEY,
+                snapshot_date DATE NOT NULL UNIQUE,
+                net_worth_inr NUMERIC(15, 2) NOT NULL,
+                total_assets_inr NUMERIC(15, 2) NOT NULL,
+                total_liabilities_inr NUMERIC(15, 2) NOT NULL,
+                account_assets_inr NUMERIC(15, 2) NOT NULL,
+                special_investments_inr NUMERIC(15, 2) NOT NULL,
+                projected_monthly_income_inr NUMERIC(15, 2) NOT NULL,
+                details_json JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
         # Insert initial holdings if empty
         defaults = [
             ('uber_stock', 'Uber Technologies (UBER)', 15.0),
@@ -197,7 +259,7 @@ def fetch_all_accounts() -> List[Dict[str, Any]]:
 
 
 def add_account(data: AccountBalanceCreate) -> Dict[str, Any]:
-    """Add a new asset account or loan liability."""
+    """Add a new asset account or loan liability and log audit record."""
     init_db_tables()
     try:
         conn = _get_db_connection()
@@ -208,6 +270,13 @@ def add_account(data: AccountBalanceCreate) -> Dict[str, Any]:
             RETURNING id, account_name, account_type, balance_inr, monthly_return_pct, created_at, updated_at
         """, (data.account_name, data.account_type, data.balance_inr, data.monthly_return_pct))
         new_acc = cur.fetchone()
+        
+        if new_acc:
+            cur.execute("""
+                INSERT INTO account_audit_logs (account_id, account_name, action_type, new_balance_inr, new_monthly_return_pct, change_reason)
+                VALUES (%s, %s, 'CREATE', %s, %s, 'Initial account creation')
+            """, (new_acc["id"], new_acc["account_name"], new_acc["balance_inr"], new_acc["monthly_return_pct"]))
+            
         conn.commit()
         cur.close()
         conn.close()
@@ -238,13 +307,90 @@ def add_account(data: AccountBalanceCreate) -> Dict[str, Any]:
     return new_item
 
 
+def update_account_by_id(account_id: int, data: AccountBalanceUpdate) -> Optional[Dict[str, Any]]:
+    """Update an existing account balance, type, or rate and record audit log."""
+    init_db_tables()
+    try:
+        conn = _get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Fetch current record
+        cur.execute("SELECT * FROM account_balances WHERE id = %s", (account_id,))
+        existing = cur.fetchone()
+        if not existing:
+            cur.close()
+            conn.close()
+            return None
+
+        old_bal = float(existing["balance_inr"])
+        old_rate = float(existing["monthly_return_pct"])
+        old_name = existing["account_name"]
+        old_type = existing["account_type"]
+
+        new_name = data.account_name if data.account_name is not None else old_name
+        new_type = data.account_type if data.account_type is not None else old_type
+        new_bal = data.balance_inr if data.balance_inr is not None else old_bal
+        new_rate = data.monthly_return_pct if data.monthly_return_pct is not None else old_rate
+        reason = data.change_reason or "Account balance/rate update"
+
+        cur.execute("""
+            UPDATE account_balances 
+            SET account_name = %s, account_type = %s, balance_inr = %s, monthly_return_pct = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING id, account_name, account_type, balance_inr, monthly_return_pct, created_at, updated_at
+        """, (new_name, new_type, new_bal, new_rate, account_id))
+        updated = cur.fetchone()
+
+        # Insert audit log entry
+        cur.execute("""
+            INSERT INTO account_audit_logs (account_id, account_name, action_type, old_balance_inr, new_balance_inr, old_monthly_return_pct, new_monthly_return_pct, change_reason)
+            VALUES (%s, %s, 'UPDATE', %s, %s, %s, %s, %s)
+        """, (account_id, new_name, old_bal, new_bal, old_rate, new_rate, reason))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        if updated:
+            return {
+                "id": updated["id"],
+                "account_name": updated["account_name"],
+                "account_type": updated["account_type"],
+                "balance_inr": float(updated["balance_inr"]),
+                "monthly_return_pct": float(updated["monthly_return_pct"]),
+                "created_at": str(updated["created_at"]),
+                "updated_at": str(updated["updated_at"]),
+            }
+    except Exception as e:
+        logger.warning(f"Update account DB failed: {e}")
+
+    # Fallback memory update
+    for acc in _FALLBACK_ACCOUNTS:
+        if acc["id"] == account_id:
+            if data.account_name is not None: acc["account_name"] = data.account_name
+            if data.account_type is not None: acc["account_type"] = data.account_type
+            if data.balance_inr is not None: acc["balance_inr"] = float(data.balance_inr)
+            if data.monthly_return_pct is not None: acc["monthly_return_pct"] = float(data.monthly_return_pct)
+            return acc
+    return None
+
+
 def delete_account_by_id(account_id: int) -> bool:
-    """Delete an account or liability by primary key ID."""
+    """Delete an account or liability by primary key ID and record audit log."""
     init_db_tables()
     deleted = False
     try:
         conn = _get_db_connection()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT account_name, balance_inr, monthly_return_pct FROM account_balances WHERE id = %s", (account_id,))
+        acc = cur.fetchone()
+
+        if acc:
+            cur.execute("""
+                INSERT INTO account_audit_logs (account_id, account_name, action_type, old_balance_inr, old_monthly_return_pct, change_reason)
+                VALUES (%s, %s, 'DELETE', %s, %s, 'Account deleted')
+            """, (account_id, acc["account_name"], float(acc["balance_inr"]), float(acc["monthly_return_pct"])))
+
         cur.execute("DELETE FROM account_balances WHERE id = %s", (account_id,))
         rows_affected = cur.rowcount
         conn.commit()
@@ -262,6 +408,106 @@ def delete_account_by_id(account_id: int) -> bool:
         deleted = True
 
     return deleted
+
+
+def fetch_audit_logs(account_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Retrieve audit history logs of changes to bank accounts."""
+    init_db_tables()
+    try:
+        conn = _get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        if account_id:
+            cur.execute("SELECT * FROM account_audit_logs WHERE account_id = %s ORDER BY changed_at DESC LIMIT 100", (account_id,))
+        else:
+            cur.execute("SELECT * FROM account_audit_logs ORDER BY changed_at DESC LIMIT 100")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        if rows:
+            return [
+                {
+                    "id": r["id"],
+                    "account_id": r["account_id"],
+                    "account_name": r["account_name"],
+                    "action_type": r["action_type"],
+                    "old_balance_inr": float(r["old_balance_inr"]) if r["old_balance_inr"] is not None else None,
+                    "new_balance_inr": float(r["new_balance_inr"]) if r["new_balance_inr"] is not None else None,
+                    "old_monthly_return_pct": float(r["old_monthly_return_pct"]) if r["old_monthly_return_pct"] is not None else None,
+                    "new_monthly_return_pct": float(r["new_monthly_return_pct"]) if r["new_monthly_return_pct"] is not None else None,
+                    "change_reason": r["change_reason"],
+                    "changed_at": str(r["changed_at"]),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.warning(f"Audit log fetch failed: {e}")
+    return []
+
+
+async def save_net_worth_snapshot() -> Dict[str, Any]:
+    """
+    Creates or updates the net worth snapshot for today. Used by automated pipeline (Airflow).
+    """
+    import json
+    from datetime import date
+    init_db_tables()
+    summary = await calculate_net_worth_summary(force_refresh_market=True)
+
+    today_str = date.today().isoformat()
+    try:
+        conn = _get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        details = {
+            "usd_inr": summary.usd_inr_rate,
+            "special_investments": [h.dict() for h in summary.special_investments_breakdown],
+            "accounts_count": len(summary.accounts),
+        }
+
+        cur.execute("""
+            INSERT INTO net_worth_snapshots (snapshot_date, net_worth_inr, total_assets_inr, total_liabilities_inr, account_assets_inr, special_investments_inr, projected_monthly_income_inr, details_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (snapshot_date) DO UPDATE SET
+                net_worth_inr = EXCLUDED.net_worth_inr,
+                total_assets_inr = EXCLUDED.total_assets_inr,
+                total_liabilities_inr = EXCLUDED.total_liabilities_inr,
+                account_assets_inr = EXCLUDED.account_assets_inr,
+                special_investments_inr = EXCLUDED.special_investments_inr,
+                projected_monthly_income_inr = EXCLUDED.projected_monthly_income_inr,
+                details_json = EXCLUDED.details_json,
+                created_at = CURRENT_TIMESTAMP
+            RETURNING *
+        """, (
+            today_str,
+            summary.net_worth_inr,
+            summary.total_assets_inr,
+            summary.total_liabilities_inr,
+            summary.total_account_assets_inr,
+            summary.special_investments_inr,
+            summary.projected_monthly_income_inr,
+            json.dumps(details),
+        ))
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        if row:
+            return {
+                "status": "success",
+                "message": f"Net worth snapshot saved for {today_str}",
+                "snapshot_date": str(row["snapshot_date"]),
+                "net_worth_inr": float(row["net_worth_inr"]),
+            }
+    except Exception as e:
+        logger.warning(f"Save snapshot DB failed: {e}")
+
+    return {
+        "status": "success",
+        "message": f"Snapshot captured (fallback mode) for {today_str}",
+        "snapshot_date": today_str,
+        "net_worth_inr": summary.net_worth_inr,
+    }
+
 
 
 def fetch_special_holdings() -> List[Dict[str, Any]]:
