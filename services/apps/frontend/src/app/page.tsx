@@ -1,5 +1,6 @@
 import React from "react";
 import NetWorthTile from "../components/NetWorthTile";
+import BalconyIrrigationTile from "../components/BalconyIrrigationTile";
 
 export default function Home() {
   return (
@@ -17,6 +18,9 @@ export default function Home() {
         {/* Dashboard Tile for Net Worth Tracker & Financial Engine */}
         <NetWorthTile />
 
+        {/* Dashboard Tile for Balcony Irrigation ESP32 System */}
+        <BalconyIrrigationTile />
+
         <div style={{ background: "#1e293b", padding: "1.5rem", borderRadius: "12px", border: "1px solid #334155", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div>
             <h3 style={{ color: "#f1f5f9", marginTop: 0 }}>Bus Fare Scraper</h3>
@@ -28,12 +32,6 @@ export default function Home() {
               View Analytics Dashboard ➔
             </a>
           </div>
-        </div>
-
-        <div style={{ background: "#1e293b", padding: "1.5rem", borderRadius: "12px", border: "1px solid #334155" }}>
-          <h3 style={{ color: "#f1f5f9", marginTop: 0 }}>Balcony Irrigation</h3>
-          <p style={{ color: "#94a3b8" }}>Status: MQTT Listening</p>
-          <span style={{ background: "#065f46", color: "#34d399", padding: "0.25rem 0.5rem", borderRadius: "4px", fontSize: "0.875rem" }}>Connected</span>
         </div>
         
         <div style={{ background: "#1e293b", padding: "1.5rem", borderRadius: "12px", border: "1px solid #334155" }}>

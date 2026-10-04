@@ -15,10 +15,14 @@ if _src_dir not in sys.path:
 
 try:
     from api.v1.net_worth import router as net_worth_router
+    from api.v1.irrigation import router as irrigation_router
     from core.net_worth import init_db_tables
+    from core.irrigation import init_irrigation_db_tables
 except ImportError:
     from src.api.v1.net_worth import router as net_worth_router
+    from src.api.v1.irrigation import router as irrigation_router
     from src.core.net_worth import init_db_tables
+    from src.core.irrigation import init_irrigation_db_tables
 
 
 app = FastAPI(
@@ -28,10 +32,12 @@ app = FastAPI(
 )
 
 app.include_router(net_worth_router)
+app.include_router(irrigation_router)
 
 @app.on_event("startup")
 async def on_startup():
     init_db_tables()
+    init_irrigation_db_tables()
 
 
 app.add_middleware(
