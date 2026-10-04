@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import NetWorthManagerModal, { AccountBalance, SpecialAssetHolding } from "./NetWorthManagerModal";
 import ProjectionChart from "./ProjectionChart";
+import { getApiBaseUrl } from "../utils/api";
 
 
 export interface NetWorthSummaryData {
@@ -31,18 +32,6 @@ export default function NetWorthWidget() {
   const [refreshing, setRefreshing] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Helper to resolve API endpoint host
-  const getApiBaseUrl = () => {
-    if (typeof window !== "undefined") {
-      const envUrl = process.env.NEXT_PUBLIC_API_URL;
-      if (envUrl) return envUrl;
-      // Fallback: assume backend running on port 8000 on same host or localhost
-      const host = window.location.hostname || "localhost";
-      return `http://${host}:8000`;
-    }
-    return "http://localhost:8000";
-  };
 
   const fetchSummary = async () => {
     try {

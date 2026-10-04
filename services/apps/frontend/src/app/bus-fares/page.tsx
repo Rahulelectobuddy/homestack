@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { getApiBaseUrl } from "../../utils/api";
 
 interface BusRecord {
   id: number;
@@ -80,7 +81,7 @@ export default function BusFaresAnalyticsPage() {
   const [trendLoading, setTrendLoading] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState<TrendPoint | null>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.29:8000";
+  const API_URL = getApiBaseUrl();
 
   useEffect(() => {
     fetchData();

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { getApiBaseUrl } from "../utils/api";
 
 export interface AccountBalance {
   id: number;
@@ -88,16 +89,6 @@ export default function NetWorthManagerModal({
   const [goldQty, setGoldQty] = useState(goldHolding ? goldHolding.quantity.toString() : "0");
   const [silverQty, setSilverQty] = useState(silverHolding ? silverHolding.quantity.toString() : "0");
   const [isSubmittingAssets, setIsSubmittingAssets] = useState(false);
-
-  const getApiBaseUrl = () => {
-    if (typeof window !== "undefined") {
-      const envUrl = process.env.NEXT_PUBLIC_API_URL;
-      if (envUrl) return envUrl;
-      const host = window.location.hostname || "localhost";
-      return `http://${host}:8000`;
-    }
-    return "http://localhost:8000";
-  };
 
   const fetchAuditLogs = async () => {
     setLoadingAuditLogs(true);

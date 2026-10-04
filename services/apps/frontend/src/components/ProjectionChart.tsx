@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { getApiBaseUrl } from "../utils/api";
 
 export interface ProjectionPoint {
   month_label: string;
@@ -25,16 +26,6 @@ export default function ProjectionChart({ data: propData }: ProjectionChartProps
   const [data, setData] = useState<ProjectionsData | null>(propData || null);
   const [loading, setLoading] = useState(!propData);
   const [hoveredPoint, setHoveredPoint] = useState<ProjectionPoint | null>(null);
-
-  const getApiBaseUrl = () => {
-    if (typeof window !== "undefined") {
-      const envUrl = process.env.NEXT_PUBLIC_API_URL;
-      if (envUrl) return envUrl;
-      const host = window.location.hostname || "localhost";
-      return `http://${host}:8000`;
-    }
-    return "http://localhost:8000";
-  };
 
   useEffect(() => {
     if (!propData) {

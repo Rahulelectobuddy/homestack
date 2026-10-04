@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { getApiBaseUrl } from "../../utils/api";
 
 interface DeviceStatus {
   device_id: string;
@@ -57,7 +58,7 @@ export default function IrrigationDashboard() {
     "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"
   ]);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.29:8000";
+  const API_URL = getApiBaseUrl();
 
   const fetchStatus = async () => {
     try {
