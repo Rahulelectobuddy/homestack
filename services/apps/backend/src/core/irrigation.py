@@ -89,6 +89,16 @@ class WateringHistoryOut(BaseModel):
     details: Dict[str, Any]
 
 
+class IrrigationLogOut(BaseModel):
+    id: int
+    device_id: str
+    event_type: str
+    topic: Optional[str] = None
+    details: Dict[str, Any]
+    duration_seconds: Optional[int] = 60
+    created_at: Optional[str] = None
+
+
 # --- Database Connection Helper ---
 
 def get_db_connection():
