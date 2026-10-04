@@ -99,74 +99,77 @@ def get_db_connection():
 
 def init_irrigation_db_tables():
     """Initializes PostgreSQL tables for Balcony Irrigation ESP32 system."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
+    for attempt in range(1, 10):
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
 
-        # 1. Devices & Heartbeat Status Table (Moisture & Temp removed)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS irrigation_devices (
-                device_id VARCHAR(64) PRIMARY KEY,
-                device_name VARCHAR(128) NOT NULL,
-                status VARCHAR(32) NOT NULL DEFAULT 'offline',
-                hbt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                relay1_state VARCHAR(10) NOT NULL DEFAULT 'OFF',
-                rssi INTEGER DEFAULT -65,
-                watering_started_at TIMESTAMP WITH TIME ZONE,
-                watering_auto_stop_at TIMESTAMP WITH TIME ZONE,
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        # Seed default ESP32 device if not exists
-        cur.execute("""
-            INSERT INTO irrigation_devices (device_id, device_name, status, hbt, relay1_state, rssi)
-            VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s)
-            ON CONFLICT (device_id) DO NOTHING;
-        """, (DEFAULT_DEVICE_ID, "Balcony Irrigation ESP32 (Project 03)", "online", "OFF", -62))
-
-        # 2. Automated Watering Schedules Table
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS irrigation_schedules (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(128) NOT NULL,
-                time_of_day VARCHAR(5) NOT NULL,
-                days_of_week TEXT NOT NULL DEFAULT 'Mon,Tue,Wed,Thu,Fri,Sat,Sun',
-                duration_seconds INTEGER DEFAULT 60,
-                relay INTEGER DEFAULT 1,
-                is_active BOOLEAN DEFAULT TRUE,
-                last_run TIMESTAMP WITH TIME ZONE,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        # Seed initial default schedule if table is empty
-        cur.execute("SELECT COUNT(*) FROM irrigation_schedules;")
-        if cur.fetchone()[0] == 0:
+            # 1. Devices & Heartbeat Status Table (Moisture & Temp removed)
             cur.execute("""
-                INSERT INTO irrigation_schedules (name, time_of_day, days_of_week, duration_seconds, relay, is_active)
-                VALUES (%s, %s, %s, %s, %s, %s);
-            """, ("Morning Balcony Shower", "07:30", "Mon,Tue,Wed,Thu,Fri,Sat,Sun", 60, 1, True))
+                CREATE TABLE IF NOT EXISTS irrigation_devices (
+                    device_id VARCHAR(64) PRIMARY KEY,
+                    device_name VARCHAR(128) NOT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'offline',
+                    hbt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    relay1_state VARCHAR(10) NOT NULL DEFAULT 'OFF',
+                    rssi INTEGER DEFAULT -65,
+                    watering_started_at TIMESTAMP WITH TIME ZONE,
+                    watering_auto_stop_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
 
-        # 3. Telemetry, Heartbeat & Watering History Logs Table
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS irrigation_logs (
-                id SERIAL PRIMARY KEY,
-                device_id VARCHAR(64) DEFAULT 'esp32-balcony-03',
-                event_type VARCHAR(64) NOT NULL,
-                topic VARCHAR(256),
-                details JSONB DEFAULT '{}'::jsonb,
-                duration_seconds INTEGER DEFAULT 60,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
+            # Seed default ESP32 device if not exists
+            cur.execute("""
+                INSERT INTO irrigation_devices (device_id, device_name, status, hbt, relay1_state, rssi)
+                VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s)
+                ON CONFLICT (device_id) DO NOTHING;
+            """, (DEFAULT_DEVICE_ID, "Balcony Irrigation ESP32 (Project 03)", "online", "OFF", -62))
 
-        conn.commit()
-        cur.close()
-        conn.close()
-        logger.info("[Irrigation DB] Initialization complete.")
-    except Exception as e:
-        logger.error(f"[Irrigation DB] Initialization failed: {e}")
+            # 2. Automated Watering Schedules Table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS irrigation_schedules (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(128) NOT NULL,
+                    time_of_day VARCHAR(5) NOT NULL,
+                    days_of_week TEXT NOT NULL DEFAULT 'Mon,Tue,Wed,Thu,Fri,Sat,Sun',
+                    duration_seconds INTEGER DEFAULT 60,
+                    relay INTEGER DEFAULT 1,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    last_run TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            # Seed initial default schedule if table is empty
+            cur.execute("SELECT COUNT(*) FROM irrigation_schedules;")
+            if cur.fetchone()[0] == 0:
+                cur.execute("""
+                    INSERT INTO irrigation_schedules (name, time_of_day, days_of_week, duration_seconds, relay, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s);
+                """, ("Morning Balcony Shower", "07:30", "Mon,Tue,Wed,Thu,Fri,Sat,Sun", 60, 1, True))
+
+            # 3. Telemetry, Heartbeat & Watering History Logs Table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS irrigation_logs (
+                    id SERIAL PRIMARY KEY,
+                    device_id VARCHAR(64) DEFAULT 'esp32-balcony-03',
+                    event_type VARCHAR(64) NOT NULL,
+                    topic VARCHAR(256),
+                    details JSONB DEFAULT '{}'::jsonb,
+                    duration_seconds INTEGER DEFAULT 60,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            conn.commit()
+            cur.close()
+            conn.close()
+            logger.info("[Irrigation DB] Initialization complete.")
+            return
+        except Exception as e:
+            logger.warning(f"[Irrigation DB] Postgres database not ready yet (attempt {attempt}/10): {e}")
+            time.sleep(2)
 
 
 # --- Helper to Publish MQTT Message ---

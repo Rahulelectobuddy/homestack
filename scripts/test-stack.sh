@@ -32,8 +32,8 @@ check_endpoint() {
   exit 1
 }
 
-check_endpoint "Backend API (/health)" "http://$HOST:8000/health"
-check_endpoint "Bus Fares Analytics API (/api/v1/analytics/bus-fares)" "http://$HOST:8000/api/v1/analytics/bus-fares"
+check_endpoint "Backend API (/health)" "http://$HOST:8000/health" 10 3
+check_endpoint "Bus Fares Analytics API (/api/v1/analytics/bus-fares)" "http://$HOST:8000/api/v1/analytics/bus-fares" 10 3
 check_endpoint "Health Ingester (/health)" "http://$HOST:8001/health"
 check_endpoint "Airflow Webserver (/health)" "http://$HOST:8080/health" 15 5
 check_endpoint "Frontend App (/)" "http://$HOST:3000/"
@@ -51,7 +51,7 @@ else
 fi
 
 echo "📡 [4/5] Testing MQTT Broker -> Irrigation Service..."
-docker exec mqtt_broker mosquitto_pub -t "homelab/irrigation/ci_test" -m '{"test": true, "moisture": 50.0}'
+docker exec mqtt_broker mosquitto_pub -t "esp32/balcony/ci_test" -m '{"test": true, "status": "online"}'
 echo "  ✅ MQTT Telemetry Event Published!"
 
 echo "⚙️ [5/5] Testing Airflow ETL Trigger..."

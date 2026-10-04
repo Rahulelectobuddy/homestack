@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Response
 from typing import List, Dict, Any, Optional
 
 try:
@@ -22,6 +22,7 @@ try:
         update_special_holdings,
         calculate_net_worth_summary,
         get_projection_vs_actual_data,
+        generate_net_worth_pdf_report,
     )
 except ImportError:
     from ...core.net_worth import (
@@ -44,6 +45,7 @@ except ImportError:
         update_special_holdings,
         calculate_net_worth_summary,
         get_projection_vs_actual_data,
+        generate_net_worth_pdf_report,
     )
 
 
@@ -163,3 +165,23 @@ async def bulk_update_special_assets(payload: BulkSpecialAssetUpdate):
         "holdings": updated_holdings,
         "summary": summary
     }
+
+
+@router.get("/report/pdf")
+async def download_net_worth_pdf_report():
+    """
+    Generates and returns a downloadable PDF financial report covering Net Worth,
+    current investment portfolio, and 7-day week-over-week changes.
+    """
+    try:
+        pdf_bytes = generate_net_worth_pdf_report()
+        headers = {
+            "Content-Disposition": f"attachment; filename=net_worth_portfolio_report.pdf"
+        }
+        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate PDF report: {str(e)}"
+        )
+

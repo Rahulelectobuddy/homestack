@@ -30,8 +30,34 @@ export default function NetWorthWidget() {
   const [data, setData] = useState<NetWorthSummaryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleGeneratePdfReport = async () => {
+    try {
+      setDownloadingPdf(true);
+      setError(null);
+      const url = `${getApiBaseUrl()}/api/v1/net-worth/report/pdf`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to generate PDF report");
+
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `Net_Worth_Portfolio_Report_${new Date().toISOString().split("T")[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err: any) {
+      console.error("PDF generation failed:", err);
+      setError("Failed to generate PDF report.");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const fetchSummary = async () => {
     try {
@@ -213,7 +239,31 @@ export default function NetWorthWidget() {
         </div>
 
         {/* Actions */}
-        <div style={{ display: "flex", gap: "0.75rem" }}>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <button
+            onClick={handleGeneratePdfReport}
+            disabled={downloadingPdf}
+            style={{
+              background: downloadingPdf ? "#475569" : "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+              color: "#ffffff",
+              border: "none",
+              padding: "0.6rem 1.1rem",
+              borderRadius: "10px",
+              fontWeight: 700,
+              fontSize: "0.875rem",
+              cursor: downloadingPdf ? "wait" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
+              transition: "all 0.2s ease",
+              opacity: downloadingPdf ? 0.7 : 1,
+            }}
+          >
+            <span>📄</span>
+            {downloadingPdf ? "Generating PDF..." : "Generate PDF Report"}
+          </button>
+
           <button
             onClick={handleRefreshPrices}
             disabled={refreshing}

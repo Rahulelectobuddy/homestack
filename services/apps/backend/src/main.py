@@ -36,8 +36,15 @@ app.include_router(irrigation_router)
 
 @app.on_event("startup")
 async def on_startup():
-    init_db_tables()
-    init_irrigation_db_tables()
+    try:
+        init_db_tables()
+    except Exception as e:
+        print(f"[Backend Startup] Net Worth DB table init warning: {e}")
+
+    try:
+        init_irrigation_db_tables()
+    except Exception as e:
+        print(f"[Backend Startup] Irrigation DB table init warning: {e}")
 
 
 app.add_middleware(

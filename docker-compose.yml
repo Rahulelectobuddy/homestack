@@ -86,6 +86,8 @@ services:
     image: ${REGISTRY_HOST:-localhost:5000}/backend:${BACKEND_TAG:-latest}
     container_name: app_backend
     restart: always
+    depends_on:
+      - postgres
     ports:
       - "8000:8000"
     environment:

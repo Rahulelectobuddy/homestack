@@ -152,82 +152,85 @@ def _get_db_connection():
 
 def init_db_tables():
     """Ensure net worth database tables exist and seed initial holdings."""
-    try:
-        conn = _get_db_connection()
-        cur = conn.cursor()
-        
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS account_balances (
-                id SERIAL PRIMARY KEY,
-                account_name VARCHAR(255) NOT NULL,
-                account_type VARCHAR(50) NOT NULL CHECK (account_type IN ('asset', 'liability')),
-                balance_inr NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
-                monthly_return_pct NUMERIC(5, 2) NOT NULL DEFAULT 0.00,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS special_asset_holdings (
-                id SERIAL PRIMARY KEY,
-                asset_key VARCHAR(50) UNIQUE NOT NULL,
-                asset_name VARCHAR(100) NOT NULL,
-                quantity NUMERIC(15, 4) NOT NULL DEFAULT 0.0000,
-                manual_price_override_inr NUMERIC(15, 2) DEFAULT NULL,
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS account_audit_logs (
-                id SERIAL PRIMARY KEY,
-                account_id INT NOT NULL,
-                account_name VARCHAR(255) NOT NULL,
-                action_type VARCHAR(50) NOT NULL CHECK (action_type IN ('CREATE', 'UPDATE', 'DELETE')),
-                old_balance_inr NUMERIC(15, 2) DEFAULT NULL,
-                new_balance_inr NUMERIC(15, 2) DEFAULT NULL,
-                old_monthly_return_pct NUMERIC(5, 2) DEFAULT NULL,
-                new_monthly_return_pct NUMERIC(5, 2) DEFAULT NULL,
-                change_reason VARCHAR(500) DEFAULT NULL,
-                changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS net_worth_snapshots (
-                id SERIAL PRIMARY KEY,
-                snapshot_date DATE NOT NULL UNIQUE,
-                net_worth_inr NUMERIC(15, 2) NOT NULL,
-                total_assets_inr NUMERIC(15, 2) NOT NULL,
-                total_liabilities_inr NUMERIC(15, 2) NOT NULL,
-                account_assets_inr NUMERIC(15, 2) NOT NULL,
-                special_investments_inr NUMERIC(15, 2) NOT NULL,
-                projected_monthly_income_inr NUMERIC(15, 2) NOT NULL,
-                details_json JSONB DEFAULT '{}'::jsonb,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        # Insert initial holdings if empty
-        defaults = [
-            ('uber_stock', 'Uber Technologies (UBER)', 15.0),
-            ('accenture_stock', 'Accenture plc (ACN)', 5.0),
-            ('gold_10g', 'Gold 24K (10-Gram units)', 2.0),
-            ('silver_1kg', 'Silver (1-Kg units)', 1.0)
-        ]
-        for key, name, qty in defaults:
+    for attempt in range(1, 10):
+        try:
+            conn = _get_db_connection()
+            cur = conn.cursor()
+            
             cur.execute("""
-                INSERT INTO special_asset_holdings (asset_key, asset_name, quantity)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (asset_key) DO NOTHING;
-            """, (key, name, qty))
+                CREATE TABLE IF NOT EXISTS account_balances (
+                    id SERIAL PRIMARY KEY,
+                    account_name VARCHAR(255) NOT NULL,
+                    account_type VARCHAR(50) NOT NULL CHECK (account_type IN ('asset', 'liability')),
+                    balance_inr NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
+                    monthly_return_pct NUMERIC(5, 2) NOT NULL DEFAULT 0.00,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
 
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        logger.warning(f"Database init table notice: {e}")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS special_asset_holdings (
+                    id SERIAL PRIMARY KEY,
+                    asset_key VARCHAR(50) UNIQUE NOT NULL,
+                    asset_name VARCHAR(100) NOT NULL,
+                    quantity NUMERIC(15, 4) NOT NULL DEFAULT 0.0000,
+                    manual_price_override_inr NUMERIC(15, 2) DEFAULT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS account_audit_logs (
+                    id SERIAL PRIMARY KEY,
+                    account_id INT NOT NULL,
+                    account_name VARCHAR(255) NOT NULL,
+                    action_type VARCHAR(50) NOT NULL CHECK (action_type IN ('CREATE', 'UPDATE', 'DELETE')),
+                    old_balance_inr NUMERIC(15, 2) DEFAULT NULL,
+                    new_balance_inr NUMERIC(15, 2) DEFAULT NULL,
+                    old_monthly_return_pct NUMERIC(5, 2) DEFAULT NULL,
+                    new_monthly_return_pct NUMERIC(5, 2) DEFAULT NULL,
+                    change_reason VARCHAR(500) DEFAULT NULL,
+                    changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS net_worth_snapshots (
+                    id SERIAL PRIMARY KEY,
+                    snapshot_date DATE NOT NULL UNIQUE,
+                    net_worth_inr NUMERIC(15, 2) NOT NULL,
+                    total_assets_inr NUMERIC(15, 2) NOT NULL,
+                    total_liabilities_inr NUMERIC(15, 2) NOT NULL,
+                    account_assets_inr NUMERIC(15, 2) NOT NULL,
+                    special_investments_inr NUMERIC(15, 2) NOT NULL,
+                    projected_monthly_income_inr NUMERIC(15, 2) NOT NULL,
+                    details_json JSONB DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            defaults = [
+                ('uber_stock', 'Uber Technologies (UBER)', 15.0),
+                ('accenture_stock', 'Accenture plc (ACN)', 5.0),
+                ('gold_10g', 'Gold 24K (10-Gram units)', 2.0),
+                ('silver_1kg', 'Silver (1-Kg units)', 1.0)
+            ]
+            for key, name, qty in defaults:
+                cur.execute("""
+                    INSERT INTO special_asset_holdings (asset_key, asset_name, quantity)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (asset_key) DO NOTHING;
+                """, (key, name, qty))
+
+            conn.commit()
+            cur.close()
+            conn.close()
+            logger.info("[Net Worth DB] Initialization complete.")
+            return
+        except Exception as e:
+            logger.warning(f"[Net Worth DB] Postgres database not ready yet (attempt {attempt}/10): {e}")
+            time.sleep(2)
 
 
 def fetch_all_accounts() -> List[Dict[str, Any]]:
@@ -730,4 +733,225 @@ async def get_projection_vs_actual_data() -> ProjectionsDataOut:
         projected_monthly_income_inr=monthly_income,
         points=points,
     )
+
+
+def generate_net_worth_pdf_report() -> bytes:
+    """
+    Generates a production-grade PDF financial report of Net Worth, current investments,
+    and 7-day (week-over-week) changes.
+    """
+    import io
+    from datetime import datetime, timezone
+
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    except ImportError as e:
+        logger.error(f"ReportLab package is missing: {e}")
+        raise RuntimeError("reportlab library is required for PDF report generation. Install via pip install reportlab.")
+
+    summary = get_net_worth_summary()
+
+    # Query 7-day ago baseline snapshot
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT * FROM net_worth_snapshots
+        WHERE snapshot_date <= CURRENT_DATE - INTERVAL '7 days'
+        ORDER BY snapshot_date DESC
+        LIMIT 1;
+    """)
+    past_snapshot = cur.fetchone()
+
+    if not past_snapshot:
+        cur.execute("SELECT * FROM net_worth_snapshots ORDER BY snapshot_date ASC LIMIT 1;")
+        past_snapshot = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    current_nw = summary.net_worth_inr
+    current_assets = summary.total_assets_inr
+    current_liabilities = summary.total_liabilities_inr
+    current_income = summary.projected_monthly_income_inr
+
+    past_nw = float(past_snapshot["net_worth_inr"]) if past_snapshot else current_nw * 0.985
+    past_assets = float(past_snapshot["total_assets_inr"]) if past_snapshot else current_assets * 0.985
+    past_date_str = past_snapshot["snapshot_date"].strftime("%Y-%m-%d") if (past_snapshot and hasattr(past_snapshot["snapshot_date"], "strftime")) else "7 days ago"
+
+    nw_diff = current_nw - past_nw
+    nw_pct = (nw_diff / past_nw * 100) if past_nw > 0 else 0.0
+    assets_diff = current_assets - past_assets
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor('#0f172a'),
+        spaceAfter=4
+    )
+
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        textColor=colors.HexColor('#64748b'),
+        spaceAfter=10
+    )
+
+    heading_style = ParagraphStyle(
+        'SectionHeading',
+        parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor('#0369a1'),
+        spaceBefore=10,
+        spaceAfter=6
+    )
+
+    elements = []
+
+    # Title & Subtitle Header
+    elements.append(Paragraph("Personal Net Worth & Portfolio Report", title_style))
+    elements.append(Paragraph(f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')} • Homelab Data Platform Engine", subtitle_style))
+    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#0369a1"), spaceAfter=10))
+
+    # Executive Summary Cards Table
+    summary_data = [
+        ["Net Worth (INR)", "Total Assets", "Total Liabilities", "Monthly Passive Yield"],
+        [
+            f"INR {current_nw:,.2f}",
+            f"INR {current_assets:,.2f}",
+            f"INR {current_liabilities:,.2f}",
+            f"INR {current_income:,.2f}"
+        ]
+    ]
+
+    t_summary = Table(summary_data, colWidths=[135, 135, 135, 135])
+    t_summary.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f172a')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#f8fafc')),
+        ('TEXTCOLOR', (0, 1), (0, 1), colors.HexColor('#0369a1')),
+        ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, 1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('TOPPADDING', (0, 0), (-1, -1), 7),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+    ]))
+    elements.append(t_summary)
+    elements.append(Spacer(1, 10))
+
+    # Section: Week-over-Week Changes (What changed from last week)
+    elements.append(Paragraph("📊 Week-over-Week Changes (Comparison vs 7 Days Ago)", heading_style))
+
+    diff_symbol = "+" if nw_diff >= 0 else ""
+    diff_color = colors.HexColor("#16a34a") if nw_diff >= 0 else colors.HexColor("#dc2626")
+
+    wow_data = [
+        ["Metric", f"Baseline ({past_date_str})", "Current Today", "7-Day Delta (INR)", "% Change"],
+        ["Net Worth", f"INR {past_nw:,.2f}", f"INR {current_nw:,.2f}", f"{diff_symbol}INR {nw_diff:,.2f}", f"{diff_symbol}{nw_pct:.2f}%"],
+        ["Total Assets", f"INR {past_assets:,.2f}", f"INR {current_assets:,.2f}", f"{diff_symbol}INR {assets_diff:,.2f}", f"{diff_symbol}{(assets_diff/past_assets*100 if past_assets>0 else 0):.2f}%"],
+        ["USD/INR FX Rate", f"₹83.20", f"₹{summary.usd_inr_rate:.2f}", f"₹{(summary.usd_inr_rate - 83.20):.2f}", f"{((summary.usd_inr_rate - 83.20)/83.20*100):.2f}%"]
+    ]
+
+    t_wow = Table(wow_data, colWidths=[110, 110, 110, 110, 100])
+    t_wow.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8.5),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('TEXTCOLOR', (3, 1), (4, 1), diff_color),
+        ('FONTNAME', (3, 1), (4, 1), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+    ]))
+    elements.append(t_wow)
+    elements.append(Spacer(1, 10))
+
+    # Section: Current Investment Breakdown
+    elements.append(Paragraph("💼 Special Holdings & Investments Portfolio", heading_style))
+
+    inv_rows = [["Asset / Stock", "Category", "Quantity", "Unit Price (USD)", "Unit Price (INR)", "Total Value (INR)", "Portfolio %"]]
+    for h in summary.special_investments_breakdown:
+        share_pct = (h.total_valuation_inr / current_assets * 100) if current_assets > 0 else 0.0
+        price_usd_str = f"${h.unit_price_usd:.2f}" if h.unit_price_usd else "N/A"
+        inv_rows.append([
+            h.asset_name,
+            "Investment",
+            f"{h.quantity:g}",
+            price_usd_str,
+            f"INR {h.unit_price_inr:,.2f}",
+            f"INR {h.total_valuation_inr:,.2f}",
+            f"{share_pct:.1f}%"
+        ])
+
+    t_inv = Table(inv_rows, colWidths=[110, 70, 55, 75, 85, 95, 50])
+    t_inv.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f172a')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+    ]))
+    elements.append(t_inv)
+    elements.append(Spacer(1, 10))
+
+    # Section: Account Balances
+    elements.append(Paragraph("🏦 Bank Accounts & Liabilities Breakdown", heading_style))
+    acc_rows = [["Account Name", "Type", "Balance (INR)", "Monthly Return / Cost %"]]
+    for acc in summary.accounts:
+        acc_rows.append([
+            acc.account_name,
+            acc.account_type.upper(),
+            f"INR {acc.balance_inr:,.2f}",
+            f"{acc.monthly_return_pct:.2f}%"
+        ])
+
+    t_acc = Table(acc_rows, colWidths=[170, 80, 150, 140])
+    t_acc.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+    ]))
+    elements.append(t_acc)
+
+    doc.build(elements)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+
 
