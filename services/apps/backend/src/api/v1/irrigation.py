@@ -6,6 +6,7 @@ from core.irrigation import (
     TriggerWaterRequest,
     ScheduleCreate,
     ScheduleOut,
+    WateringHistoryOut,
     IrrigationLogOut,
     get_device_status,
     trigger_water_relay1,
@@ -14,6 +15,7 @@ from core.irrigation import (
     create_schedule,
     toggle_schedule,
     delete_schedule,
+    get_watering_history,
     get_irrigation_logs,
     AUTO_STOP_INTERVAL_SECONDS
 )
@@ -25,7 +27,7 @@ router = APIRouter(prefix="/api/v1/irrigation", tags=["Balcony Irrigation Engine
 async def get_status(device_id: str = Query("esp32-balcony-03", description="Target ESP32 Device ID")):
     """
     Returns live status, heartbeat (hbt), online status, current relay 1 state,
-    soil moisture, temperature, and auto-stop safety interval parameters.
+    and auto-stop safety interval parameters.
     """
     try:
         return get_device_status(device_id=device_id)
@@ -58,6 +60,17 @@ async def stop_water():
         return stop_water_relay1(reason="manual_user_stop")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stop watering: {str(e)}")
+
+
+@router.get("/history", response_model=List[WateringHistoryOut])
+async def list_watering_history(limit: int = Query(50, ge=1, le=200)):
+    """
+    Retrieves history of past manual and scheduled watering runs with auto-cutoff verification.
+    """
+    try:
+        return get_watering_history(limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve watering history: {str(e)}")
 
 
 @router.get("/schedules", response_model=List[ScheduleOut])
@@ -107,7 +120,7 @@ async def remove_schedule(schedule_id: int):
 @router.get("/logs", response_model=List[IrrigationLogOut])
 async def list_logs(limit: int = Query(50, ge=1, le=200)):
     """
-    Retrieves historical telemetry, heartbeat, and trigger logs.
+    Retrieves raw telemetry, heartbeat, and trigger logs.
     """
     try:
         return get_irrigation_logs(limit=limit)

@@ -19,10 +19,14 @@ MQTT_BROKER = os.getenv("MQTT_BROKER_HOST", "mqtt-broker")
 MQTT_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://homelab:homelab123@postgres:5432/homelab_db")
-TOPIC = "homelab/irrigation/#"
 
 DEFAULT_DEVICE_ID = "esp32-balcony-03"
 AUTO_STOP_INTERVAL_SECONDS = 60  # Mandatory 1-minute auto-stop safety interval
+
+# Standard ESP32 MQTT Topics
+MQTT_TOPIC_RELAY1 = os.getenv("MQTT_TOPIC_RELAY1", "esp32/balcony/relay1")
+MQTT_TOPIC_CMD = os.getenv("MQTT_TOPIC_CMD", "esp32/balcony/cmd")
+MQTT_TOPICS_SUB = ["esp32/balcony/#", "esp32/03/#", "homelab/irrigation/#"]
 
 writer = None
 if MINIO_ENDPOINT:
@@ -41,7 +45,7 @@ def get_db_connection():
 
 
 def process_telemetry_message(topic: str, payload: Any):
-    """Processes telemetry, heartbeat (hbt), and status MQTT messages from ESP32."""
+    """Processes heartbeat (HBT), online status, and relay state from ESP32."""
     now = datetime.now(timezone.utc)
     
     if not isinstance(payload, dict):
@@ -52,17 +56,13 @@ def process_telemetry_message(topic: str, payload: Any):
 
     device_id = payload.get("device_id", DEFAULT_DEVICE_ID)
     status_str = payload.get("status", "online")
-    relay1_state = payload.get("relay1") or payload.get("relay1_state") or payload.get("valve") or "OFF"
-    
-    soil_moisture = payload.get("soil_moisture") or payload.get("moisture")
-    temperature = payload.get("temperature") or payload.get("temp")
+    relay1_state = payload.get("relay1") or payload.get("relay1_state") or payload.get("relay") or payload.get("state")
     rssi = payload.get("rssi") or payload.get("wifi_rssi")
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Build dynamic query depending on present fields
         update_fields = ["hbt = %s", "updated_at = %s"]
         params = [now, now]
 
@@ -71,16 +71,11 @@ def process_telemetry_message(topic: str, payload: Any):
             params.append(status_str)
 
         if relay1_state:
-            update_fields.append("relay1_state = %s")
-            params.append(str(relay1_state).upper())
-
-        if soil_moisture is not None:
-            update_fields.append("soil_moisture = %s")
-            params.append(float(soil_moisture))
-
-        if temperature is not None:
-            update_fields.append("temperature = %s")
-            params.append(float(temperature))
+            state_val = str(relay1_state).upper()
+            if state_val in ["ON", "1", "TRUE"]:
+                update_fields.append("relay1_state = 'ON'")
+            elif state_val in ["OFF", "0", "FALSE"]:
+                update_fields.append("relay1_state = 'OFF'")
 
         if rssi is not None:
             update_fields.append("rssi = %s")
@@ -95,8 +90,7 @@ def process_telemetry_message(topic: str, payload: Any):
         """
         cur.execute(sql, params)
 
-        # Log heartbeat event
-        event_type = "hbt" if "hbt" in topic or "status" in topic else "telemetry"
+        event_type = "hbt" if ("hbt" in topic or "status" in topic) else "telemetry"
         cur.execute("""
             INSERT INTO irrigation_logs (device_id, event_type, topic, details)
             VALUES (%s, %s, %s, %s);
@@ -105,7 +99,7 @@ def process_telemetry_message(topic: str, payload: Any):
         conn.commit()
         cur.close()
         conn.close()
-        logger.info(f"[MQTT Processor] Updated ESP32 device status & HBT in Postgres for {device_id}")
+        logger.info(f"[MQTT Processor] Updated ESP32 device status & HBT for {device_id} on {topic}")
 
     except Exception as e:
         logger.error(f"[MQTT Processor] DB error updating telemetry/HBT: {e}")
@@ -114,11 +108,9 @@ def process_telemetry_message(topic: str, payload: Any):
 def on_irrigation_message(topic: str, payload: Any):
     logger.info(f"Received message on {topic}: {payload}")
     
-    # 1. Process and update database for telemetry / heartbeat messages
-    if "cmd" not in topic:
+    if "cmd" not in topic and "relay1" not in topic:
         process_telemetry_message(topic, payload)
 
-    # 2. Stream to MinIO raw data lake
     if writer:
         try:
             event_data = payload if isinstance(payload, dict) else {"topic": topic, "payload": payload}
@@ -140,7 +132,7 @@ def schedule_runner_loop():
         try:
             now = datetime.now(timezone.utc)
             current_time = now.strftime("%H:%M")
-            current_day = now.strftime("%a")  # Mon, Tue, etc.
+            current_day = now.strftime("%a")
 
             conn = get_db_connection()
             cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -157,7 +149,7 @@ def schedule_runner_loop():
                     if last_run:
                         if last_run.tzinfo is None:
                             last_run = last_run.replace(tzinfo=timezone.utc)
-                        if (now - last_run).total_seconds() < 120:  # Ran in the last 2 mins
+                        if (now - last_run).total_seconds() < 120:
                             already_ran_today = True
 
                     if not already_ran_today:
@@ -165,7 +157,6 @@ def schedule_runner_loop():
                         duration = AUTO_STOP_INTERVAL_SECONDS
                         auto_stop_at = now + timedelta(seconds=duration)
 
-                        # Update device state to watering
                         cur.execute("""
                             UPDATE irrigation_devices
                             SET relay1_state = 'ON',
@@ -176,14 +167,12 @@ def schedule_runner_loop():
                             WHERE device_id = %s;
                         """, (now, auto_stop_at, DEFAULT_DEVICE_ID))
 
-                        # Update last_run for schedule
                         cur.execute("""
                             UPDATE irrigation_schedules
                             SET last_run = %s
                             WHERE id = %s;
                         """, (now, sched["id"]))
 
-                        # Insert log
                         log_details = {
                             "schedule_id": sched["id"],
                             "schedule_name": sched["name"],
@@ -193,20 +182,22 @@ def schedule_runner_loop():
                         cur.execute("""
                             INSERT INTO irrigation_logs (device_id, event_type, topic, details, duration_seconds)
                             VALUES (%s, %s, %s, %s, %s);
-                        """, (DEFAULT_DEVICE_ID, "scheduled_trigger", "homelab/irrigation/cmd", json.dumps(log_details), duration))
+                        """, (DEFAULT_DEVICE_ID, "scheduled_trigger", MQTT_TOPIC_RELAY1, json.dumps(log_details), duration))
 
                         conn.commit()
 
-                        # Publish MQTT command
                         cmd_payload = {
                             "command": "WATER_ON",
                             "relay": 1,
+                            "state": "ON",
                             "duration_seconds": duration,
                             "auto_stop_interval": "1 min",
                             "source": "schedule",
                             "schedule_id": sched["id"],
                             "timestamp": now.isoformat()
                         }
+                        mqtt_client.publish(MQTT_TOPIC_RELAY1, cmd_payload)
+                        mqtt_client.publish(MQTT_TOPIC_CMD, cmd_payload)
                         mqtt_client.publish("homelab/irrigation/cmd", cmd_payload)
 
             cur.close()
@@ -262,16 +253,19 @@ def auto_stop_safety_loop():
                     cur.execute("""
                         INSERT INTO irrigation_logs (device_id, event_type, topic, details, duration_seconds)
                         VALUES (%s, %s, %s, %s, %s);
-                    """, (device_id, "auto_stop", "homelab/irrigation/cmd", json.dumps(log_details), 0))
+                    """, (device_id, "auto_stop", MQTT_TOPIC_RELAY1, json.dumps(log_details), 0))
 
                     conn.commit()
 
                     cmd_payload = {
                         "command": "WATER_OFF",
                         "relay": 1,
+                        "state": "OFF",
                         "reason": "auto_stop_1min_timeout",
                         "timestamp": now.isoformat()
                     }
+                    mqtt_client.publish(MQTT_TOPIC_RELAY1, cmd_payload)
+                    mqtt_client.publish(MQTT_TOPIC_CMD, cmd_payload)
                     mqtt_client.publish("homelab/irrigation/cmd", cmd_payload)
 
             cur.close()
@@ -286,20 +280,18 @@ def auto_stop_safety_loop():
 def main():
     logger.info("Starting Balcony Irrigation MQTT Client & Safety Scheduler Service...")
     
-    # 1. Start MQTT Subscription Client
     client = SharedMQTTClient(broker=MQTT_BROKER, port=MQTT_PORT, client_id="irrigation-mqtt-service")
-    client.subscribe(TOPIC, on_irrigation_message)
+    for topic_pat in MQTT_TOPICS_SUB:
+        client.subscribe(topic_pat, on_irrigation_message)
     client.connect()
 
-    # 2. Start Background Scheduler Thread
     scheduler_thread = threading.Thread(target=schedule_runner_loop, daemon=True)
     scheduler_thread.start()
 
-    # 3. Start Auto-Stop Safety Guard Thread
     safety_thread = threading.Thread(target=auto_stop_safety_loop, daemon=True)
     safety_thread.start()
 
-    logger.info("[Main] All MQTT listeners and safety loops operational.")
+    logger.info(f"[Main] Subscribed to {MQTT_TOPICS_SUB}. All safety loops operational.")
 
     while True:
         time.sleep(1)

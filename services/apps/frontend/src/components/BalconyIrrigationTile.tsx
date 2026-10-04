@@ -11,12 +11,11 @@ interface DeviceStatus {
   last_seen_seconds_ago: number;
   is_online: boolean;
   relay1_state: string;
-  soil_moisture: number;
-  temperature: number;
   rssi: number;
   watering_active: boolean;
   remaining_watering_seconds: number;
   auto_stop_interval_seconds: number;
+  mqtt_command_topic: string;
   note: string;
 }
 
@@ -136,21 +135,21 @@ export default function BalconyIrrigationTile() {
         </div>
 
         <p style={{ color: "#94a3b8", fontSize: "0.85rem", margin: "0 0 1rem 0" }}>
-          ESP32 Project 03 • Soil Moisture & Relay 1 Controller
+          ESP32 Project 03 • Relay 1 Balcony Watering Controller
         </p>
 
-        {/* Telemetry quick stats */}
+        {/* Telemetry status summary */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1rem" }}>
           <div style={{ background: "#0f172a", padding: "0.75rem", borderRadius: "8px", border: "1px solid #1e293b" }}>
-            <span style={{ color: "#64748b", fontSize: "0.75rem", display: "block" }}>Soil Moisture</span>
-            <span style={{ color: "#38bdf8", fontSize: "1.1rem", fontWeight: 700 }}>
-              {status ? `${status.soil_moisture.toFixed(1)}%` : "48.0%"}
+            <span style={{ color: "#64748b", fontSize: "0.75rem", display: "block" }}>Relay 1 Valve</span>
+            <span style={{ color: isWatering ? "#38bdf8" : "#cbd5e1", fontSize: "1.1rem", fontWeight: 700 }}>
+              {isWatering ? `ON (${countdown}s)` : "OFF"}
             </span>
           </div>
           <div style={{ background: "#0f172a", padding: "0.75rem", borderRadius: "8px", border: "1px solid #1e293b" }}>
-            <span style={{ color: "#64748b", fontSize: "0.75rem", display: "block" }}>Relay 1 State</span>
-            <span style={{ color: isWatering ? "#34d399" : "#cbd5e1", fontSize: "1.1rem", fontWeight: 700 }}>
-              {isWatering ? `ON (${countdown}s)` : "OFF"}
+            <span style={{ color: "#64748b", fontSize: "0.75rem", display: "block" }}>Heartbeat (HBT)</span>
+            <span style={{ color: "#34d399", fontSize: "0.95rem", fontWeight: 700 }}>
+              {status ? `${status.last_seen_seconds_ago}s ago` : "Active"}
             </span>
           </div>
         </div>
@@ -207,7 +206,7 @@ export default function BalconyIrrigationTile() {
             gap: "0.25rem",
           }}
         >
-          Dashboard & Schedules ➔
+          History & Schedules ➔
         </a>
       </div>
     </div>

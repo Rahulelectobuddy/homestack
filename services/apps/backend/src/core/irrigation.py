@@ -24,6 +24,11 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "")
 DEFAULT_DEVICE_ID = "esp32-balcony-03"
 AUTO_STOP_INTERVAL_SECONDS = 60  # Mandatory 1-minute auto-stop safety interval
 
+# Standard ESP32 MQTT Topics
+MQTT_TOPIC_RELAY1 = os.getenv("MQTT_TOPIC_RELAY1", "esp32/balcony/relay1")
+MQTT_TOPIC_CMD = os.getenv("MQTT_TOPIC_CMD", "esp32/balcony/cmd")
+MQTT_TOPIC_STATUS = os.getenv("MQTT_TOPIC_STATUS", "esp32/balcony/status")
+
 
 # --- Pydantic DTO Schemas ---
 
@@ -36,14 +41,13 @@ class DeviceStatusOut(BaseModel):
     last_seen_seconds_ago: int
     is_online: bool
     relay1_state: str  # 'ON' or 'OFF'
-    soil_moisture: float
-    temperature: float
     rssi: int
     watering_active: bool
     watering_started_at: Optional[str] = None
     watering_auto_stop_at: Optional[str] = None
     remaining_watering_seconds: int = 0
     auto_stop_interval_seconds: int = AUTO_STOP_INTERVAL_SECONDS
+    mqtt_command_topic: str = MQTT_TOPIC_RELAY1
     note: str = "Watering automatically stops after 1 minute (60s) interval."
 
 
@@ -72,14 +76,17 @@ class ScheduleOut(BaseModel):
     created_at: str
 
 
-class IrrigationLogOut(BaseModel):
+class WateringHistoryOut(BaseModel):
     id: int
     device_id: str
     event_type: str
-    topic: Optional[str] = None
+    source: str
+    relay: int
+    duration_seconds: int
+    status: str
+    triggered_at: str
+    stopped_at: Optional[str] = None
     details: Dict[str, Any]
-    duration_seconds: Optional[int] = None
-    created_at: str
 
 
 # --- Database Connection Helper ---
@@ -96,7 +103,7 @@ def init_irrigation_db_tables():
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # 1. Devices & Heartbeat Status Table
+        # 1. Devices & Heartbeat Status Table (Moisture & Temp removed)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS irrigation_devices (
                 device_id VARCHAR(64) PRIMARY KEY,
@@ -104,8 +111,6 @@ def init_irrigation_db_tables():
                 status VARCHAR(32) NOT NULL DEFAULT 'offline',
                 hbt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 relay1_state VARCHAR(10) NOT NULL DEFAULT 'OFF',
-                soil_moisture REAL DEFAULT 45.0,
-                temperature REAL DEFAULT 26.5,
                 rssi INTEGER DEFAULT -65,
                 watering_started_at TIMESTAMP WITH TIME ZONE,
                 watering_auto_stop_at TIMESTAMP WITH TIME ZONE,
@@ -115,10 +120,10 @@ def init_irrigation_db_tables():
 
         # Seed default ESP32 device if not exists
         cur.execute("""
-            INSERT INTO irrigation_devices (device_id, device_name, status, hbt, relay1_state, soil_moisture, temperature, rssi)
-            VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s)
+            INSERT INTO irrigation_devices (device_id, device_name, status, hbt, relay1_state, rssi)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s)
             ON CONFLICT (device_id) DO NOTHING;
-        """, (DEFAULT_DEVICE_ID, "Balcony Irrigation ESP32 (Project 03)", "online", "OFF", 48.0, 27.2, -62))
+        """, (DEFAULT_DEVICE_ID, "Balcony Irrigation ESP32 (Project 03)", "online", "OFF", -62))
 
         # 2. Automated Watering Schedules Table
         cur.execute("""
@@ -143,7 +148,7 @@ def init_irrigation_db_tables():
                 VALUES (%s, %s, %s, %s, %s, %s);
             """, ("Morning Balcony Shower", "07:30", "Mon,Tue,Wed,Thu,Fri,Sat,Sun", 60, 1, True))
 
-        # 3. Telemetry & Heartbeat Event Logs Table
+        # 3. Telemetry, Heartbeat & Watering History Logs Table
         cur.execute("""
             CREATE TABLE IF NOT EXISTS irrigation_logs (
                 id SERIAL PRIMARY KEY,
@@ -166,15 +171,20 @@ def init_irrigation_db_tables():
 
 # --- Helper to Publish MQTT Message ---
 
-def publish_mqtt_command(topic: str, payload: dict) -> bool:
-    """Publishes command message to MQTT Broker."""
+def publish_mqtt_command(topic: str, payload: Any) -> bool:
+    """Publishes command payload (JSON or string) to MQTT Broker."""
     try:
         client = SharedMQTTClient(broker=MQTT_BROKER, port=MQTT_PORT, client_id="backend-irrigation-pub")
-        client.publish(topic, payload)
-        logger.info(f"[Irrigation MQTT] Published command to {topic}: {payload}")
+        if isinstance(payload, dict):
+            client.publish(topic, payload)
+        else:
+            # Send raw string (e.g. "ON" / "OFF")
+            raw_payload = {"state": str(payload)}
+            client.publish(topic, raw_payload)
+        logger.info(f"[Irrigation MQTT] Published to {topic}: {payload}")
         return True
     except Exception as e:
-        logger.error(f"[Irrigation MQTT] Failed to publish command to {topic}: {e}")
+        logger.error(f"[Irrigation MQTT] Failed to publish to {topic}: {e}")
         return False
 
 
@@ -201,14 +211,13 @@ def get_device_status(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
             "last_seen_seconds_ago": 999,
             "is_online": False,
             "relay1_state": "OFF",
-            "soil_moisture": 0.0,
-            "temperature": 0.0,
-            "rssi": 0,
+            "rssi": -65,
             "watering_active": False,
             "watering_started_at": None,
             "watering_auto_stop_at": None,
             "remaining_watering_seconds": 0,
             "auto_stop_interval_seconds": AUTO_STOP_INTERVAL_SECONDS,
+            "mqtt_command_topic": MQTT_TOPIC_RELAY1,
             "note": "Watering automatically stops after 1 minute (60s) interval."
         }
 
@@ -219,7 +228,7 @@ def get_device_status(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
         hbt_dt = hbt_dt.replace(tzinfo=timezone.utc)
 
     last_seen_seconds_ago = int((now - hbt_dt).total_seconds())
-    is_online = last_seen_seconds_ago < 120  # Considered online if heartbeat received within last 2 minutes
+    is_online = last_seen_seconds_ago < 120
 
     relay1_state = row.get("relay1_state", "OFF")
     watering_auto_stop_at = row.get("watering_auto_stop_at")
@@ -235,7 +244,6 @@ def get_device_status(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
             watering_active = True
             remaining_watering_seconds = diff
         else:
-            # Auto-cutoff has passed, ensure relay state is reset
             stop_water_relay1(device_id=device_id, reason="auto_stop_1min_timeout")
             relay1_state = "OFF"
 
@@ -250,14 +258,13 @@ def get_device_status(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
         "last_seen_seconds_ago": last_seen_seconds_ago,
         "is_online": is_online,
         "relay1_state": relay1_state,
-        "soil_moisture": float(row.get("soil_moisture") or 0.0),
-        "temperature": float(row.get("temperature") or 0.0),
-        "rssi": int(row.get("rssi") or 0),
+        "rssi": int(row.get("rssi") or -65),
         "watering_active": watering_active,
         "watering_started_at": row.get("watering_started_at").isoformat() if row.get("watering_started_at") else None,
         "watering_auto_stop_at": row.get("watering_auto_stop_at").isoformat() if row.get("watering_auto_stop_at") else None,
         "remaining_watering_seconds": remaining_watering_seconds,
         "auto_stop_interval_seconds": AUTO_STOP_INTERVAL_SECONDS,
+        "mqtt_command_topic": MQTT_TOPIC_RELAY1,
         "note": "Watering automatically stops after 1 minute (60s) interval."
     }
 
@@ -271,17 +278,15 @@ def trigger_water_relay1(
     """
     Triggers Relay 1 for Balcony Irrigation.
     Mandatory Rule: Watering automatically stops after a 1-minute (60s) interval.
+    Publishes to esp32/balcony/relay1, esp32/balcony/cmd, and homelab/irrigation/cmd.
     """
-    # Enforce strict 1-minute auto-cutoff maximum or override
     duration_seconds = AUTO_STOP_INTERVAL_SECONDS
-
     now = datetime.now(timezone.utc)
     auto_stop_at = now + timedelta(seconds=duration_seconds)
 
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Update device state to watering with ON relay
     cur.execute("""
         UPDATE irrigation_devices
         SET relay1_state = 'ON',
@@ -292,7 +297,6 @@ def trigger_water_relay1(
         WHERE device_id = %s;
     """, (now, auto_stop_at, device_id))
 
-    # Log trigger event
     log_details = {
         "action": "trigger_relay1",
         "duration_seconds": duration_seconds,
@@ -305,26 +309,29 @@ def trigger_water_relay1(
     cur.execute("""
         INSERT INTO irrigation_logs (device_id, event_type, topic, details, duration_seconds)
         VALUES (%s, %s, %s, %s, %s);
-    """, (device_id, f"{source}_trigger", "homelab/irrigation/cmd", json.dumps(log_details), duration_seconds))
+    """, (device_id, f"{source}_trigger", MQTT_TOPIC_RELAY1, json.dumps(log_details), duration_seconds))
 
     conn.commit()
     cur.close()
     conn.close()
 
-    # Publish MQTT command to ESP32 topic
-    payload = {
+    # Publish MQTT commands to all standard topic patterns
+    json_cmd = {
         "command": "WATER_ON",
         "relay": 1,
+        "state": "ON",
         "duration_seconds": duration_seconds,
         "auto_stop_interval": "1 min",
         "source": source,
         "schedule_id": schedule_id,
         "timestamp": now.isoformat()
     }
-    publish_mqtt_command("homelab/irrigation/cmd", payload)
-    publish_mqtt_command("homelab/irrigation/relay1/set", {"state": "ON", "duration": duration_seconds})
+    
+    publish_mqtt_command(MQTT_TOPIC_RELAY1, json_cmd)
+    publish_mqtt_command(MQTT_TOPIC_CMD, json_cmd)
+    publish_mqtt_command("homelab/irrigation/cmd", json_cmd)
+    publish_mqtt_command("esp32/03/relay1", {"state": "ON", "duration": duration_seconds})
 
-    # Schedule background timer for 60s auto-stop
     def _auto_stop_timer():
         time.sleep(duration_seconds)
         stop_water_relay1(device_id=device_id, reason="auto_stop_1min_timeout")
@@ -332,7 +339,7 @@ def trigger_water_relay1(
     timer_thread = threading.Thread(target=_auto_stop_timer, daemon=True)
     timer_thread.start()
 
-    logger.info(f"[Irrigation] Relay 1 triggered for {duration_seconds}s (1 min auto-stop scheduled).")
+    logger.info(f"[Irrigation] Relay 1 triggered for {duration_seconds}s on {MQTT_TOPIC_RELAY1}.")
 
     return {
         "success": True,
@@ -342,6 +349,7 @@ def trigger_water_relay1(
         "duration_seconds": duration_seconds,
         "watering_started_at": now.isoformat(),
         "watering_auto_stop_at": auto_stop_at.isoformat(),
+        "mqtt_topics_notified": [MQTT_TOPIC_RELAY1, MQTT_TOPIC_CMD, "homelab/irrigation/cmd"],
         "auto_stop_note": "Watering automatically stops after 1 minute (60s) interval."
     }
 
@@ -372,20 +380,23 @@ def stop_water_relay1(device_id: str = DEFAULT_DEVICE_ID, reason: str = "manual_
     cur.execute("""
         INSERT INTO irrigation_logs (device_id, event_type, topic, details, duration_seconds)
         VALUES (%s, %s, %s, %s, %s);
-    """, (device_id, "auto_stop" if "auto_stop" in reason else "manual_stop", "homelab/irrigation/cmd", json.dumps(log_details), 0))
+    """, (device_id, "auto_stop" if "auto_stop" in reason else "manual_stop", MQTT_TOPIC_RELAY1, json.dumps(log_details), 0))
 
     conn.commit()
     cur.close()
     conn.close()
 
-    payload = {
+    json_cmd = {
         "command": "WATER_OFF",
         "relay": 1,
+        "state": "OFF",
         "reason": reason,
         "timestamp": now.isoformat()
     }
-    publish_mqtt_command("homelab/irrigation/cmd", payload)
-    publish_mqtt_command("homelab/irrigation/relay1/set", {"state": "OFF", "reason": reason})
+    publish_mqtt_command(MQTT_TOPIC_RELAY1, json_cmd)
+    publish_mqtt_command(MQTT_TOPIC_CMD, json_cmd)
+    publish_mqtt_command("homelab/irrigation/cmd", json_cmd)
+    publish_mqtt_command("esp32/03/relay1", {"state": "OFF", "reason": reason})
 
     logger.info(f"[Irrigation] Relay 1 stopped ({reason}).")
 
@@ -480,6 +491,52 @@ def delete_schedule(schedule_id: int) -> Dict[str, Any]:
     cur.close()
     conn.close()
     return {"success": True, "message": f"Schedule {schedule_id} deleted."}
+
+
+# --- History of Watering Query ---
+
+def get_watering_history(limit: int = 50) -> List[Dict[str, Any]]:
+    """Retrieves formatted history of past watering execution events."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT * FROM irrigation_logs
+        WHERE event_type IN ('manual_trigger', 'scheduled_trigger', 'auto_stop')
+        ORDER BY created_at DESC
+        LIMIT %s;
+    """, (limit,))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    history = []
+    for r in rows:
+        evt_type = r["event_type"]
+        details = r.get("details") or {}
+        
+        source = "Manual Trigger"
+        if evt_type == "scheduled_trigger":
+            sched_name = details.get("schedule_name", "Automated Schedule")
+            source = f"Scheduled: {sched_name}"
+        elif evt_type == "auto_stop":
+            source = "1-Min Auto Safety Cutoff"
+
+        duration = r.get("duration_seconds") or 60
+        status_str = "Auto-Stopped (60s)" if evt_type == "auto_stop" else "Completed (60s)"
+
+        history.append({
+            "id": r["id"],
+            "device_id": r["device_id"],
+            "event_type": evt_type,
+            "source": source,
+            "relay": 1,
+            "duration_seconds": duration,
+            "status": status_str,
+            "triggered_at": r["created_at"].isoformat() if r.get("created_at") else None,
+            "stopped_at": details.get("stopped_at") or details.get("cutoff_at"),
+            "details": details
+        })
+    return history
 
 
 def get_irrigation_logs(limit: int = 50) -> List[Dict[str, Any]]:

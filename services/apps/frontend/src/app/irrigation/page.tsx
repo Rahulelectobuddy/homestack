@@ -11,12 +11,11 @@ interface DeviceStatus {
   last_seen_seconds_ago: number;
   is_online: boolean;
   relay1_state: string;
-  soil_moisture: number;
-  temperature: number;
   rssi: number;
   watering_active: boolean;
   remaining_watering_seconds: number;
   auto_stop_interval_seconds: number;
+  mqtt_command_topic: string;
   note: string;
 }
 
@@ -32,6 +31,19 @@ interface Schedule {
   created_at: string;
 }
 
+interface WateringHistoryItem {
+  id: number;
+  device_id: string;
+  event_type: string;
+  source: string;
+  relay: number;
+  duration_seconds: number;
+  status: string;
+  triggered_at: string;
+  stopped_at: string | null;
+  details: any;
+}
+
 interface IrrigationLog {
   id: number;
   device_id: string;
@@ -45,6 +57,7 @@ interface IrrigationLog {
 export default function IrrigationDashboard() {
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [wateringHistory, setWateringHistory] = useState<WateringHistoryItem[]>([]);
   const [logs, setLogs] = useState<IrrigationLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [triggering, setTriggering] = useState<boolean>(false);
@@ -89,6 +102,18 @@ export default function IrrigationDashboard() {
     }
   };
 
+  const fetchWateringHistory = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/irrigation/history?limit=30`);
+      if (res.ok) {
+        const data: WateringHistoryItem[] = await res.json();
+        setWateringHistory(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch watering history:", err);
+    }
+  };
+
   const fetchLogs = async () => {
     try {
       const res = await fetch(`${API_URL}/api/v1/irrigation/logs?limit=30`);
@@ -104,13 +129,14 @@ export default function IrrigationDashboard() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([fetchStatus(), fetchSchedules(), fetchLogs()]);
+      await Promise.all([fetchStatus(), fetchSchedules(), fetchWateringHistory(), fetchLogs()]);
       setLoading(false);
     };
     init();
 
     const interval = setInterval(() => {
       fetchStatus();
+      fetchWateringHistory();
       fetchLogs();
     }, 4000);
 
@@ -137,7 +163,7 @@ export default function IrrigationDashboard() {
       });
       if (res.ok) {
         setCountdown(60);
-        await Promise.all([fetchStatus(), fetchLogs()]);
+        await Promise.all([fetchStatus(), fetchWateringHistory(), fetchLogs()]);
       }
     } catch (err) {
       console.error("Failed to trigger water:", err);
@@ -153,7 +179,7 @@ export default function IrrigationDashboard() {
       });
       if (res.ok) {
         setCountdown(0);
-        await Promise.all([fetchStatus(), fetchLogs()]);
+        await Promise.all([fetchStatus(), fetchWateringHistory(), fetchLogs()]);
       }
     } catch (err) {
       console.error("Failed to stop water:", err);
@@ -218,7 +244,6 @@ export default function IrrigationDashboard() {
 
   const isOnline = status?.is_online ?? true;
   const isWatering = status?.watering_active || countdown > 0;
-  const soilMoisture = status?.soil_moisture ?? 48.0;
 
   return (
     <main style={{ padding: "2rem", maxWidth: "1280px", margin: "0 auto" }}>
@@ -253,7 +278,7 @@ export default function IrrigationDashboard() {
             🌱 Balcony Irrigation Controller
           </h1>
           <p style={{ color: "#94a3b8", margin: "0.25rem 0 0 0" }}>
-            ESP32 Workspace Project 03 • MQTT Telemetry, Relay 1 Actuation & 1-Min Auto-Stop Guard
+            ESP32 Workspace Project 03 • Relay 1 Actuation, 1-Min Auto-Cutoff Guard & Watering History
           </p>
         </div>
 
@@ -294,7 +319,7 @@ export default function IrrigationDashboard() {
               fontWeight: 600,
             }}
           >
-            MQTT: homelab/irrigation/#
+            MQTT: esp32/balcony/relay1
           </div>
         </div>
       </header>
@@ -314,43 +339,35 @@ export default function IrrigationDashboard() {
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
             <h2 style={{ color: "#f8fafc", margin: 0, fontSize: "1.2rem", fontWeight: 700 }}>
-              📡 Device Telemetry & HBT
+              📡 Device Status & HBT
             </h2>
             <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>ID: esp32-balcony-03</span>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
-            {/* Soil Moisture Metric */}
+            {/* Relay 1 Status */}
             <div style={{ background: "#0f172a", padding: "1rem", borderRadius: "10px", border: "1px solid #1e293b" }}>
               <span style={{ color: "#94a3b8", fontSize: "0.8rem", display: "block", marginBottom: "0.25rem" }}>
-                Soil Moisture
+                Relay 1 Valve
               </span>
-              <div style={{ fontSize: "1.6rem", fontWeight: 800, color: soilMoisture < 35 ? "#fbbf24" : "#38bdf8" }}>
-                {soilMoisture.toFixed(1)}%
-              </div>
-              <div style={{ width: "100%", background: "#334155", height: "6px", borderRadius: "3px", marginTop: "0.5rem" }}>
-                <div
-                  style={{
-                    width: `${Math.min(100, Math.max(0, soilMoisture))}%`,
-                    background: soilMoisture < 35 ? "#fbbf24" : "#38bdf8",
-                    height: "100%",
-                    borderRadius: "3px",
-                    transition: "width 0.5s ease",
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Temperature Metric */}
-            <div style={{ background: "#0f172a", padding: "1rem", borderRadius: "10px", border: "1px solid #1e293b" }}>
-              <span style={{ color: "#94a3b8", fontSize: "0.8rem", display: "block", marginBottom: "0.25rem" }}>
-                Temperature
-              </span>
-              <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#f43f5e" }}>
-                {status?.temperature ? `${status.temperature.toFixed(1)}°C` : "26.5°C"}
+              <div style={{ fontSize: "1.5rem", fontWeight: 800, color: isWatering ? "#38bdf8" : "#cbd5e1" }}>
+                {isWatering ? `ON (${countdown}s)` : "OFF"}
               </div>
               <span style={{ color: "#64748b", fontSize: "0.75rem", display: "block", marginTop: "0.5rem" }}>
-                Signal: {status?.rssi ?? -65} dBm
+                Topic: {status?.mqtt_command_topic || "esp32/balcony/relay1"}
+              </span>
+            </div>
+
+            {/* WiFi Signal RSSI */}
+            <div style={{ background: "#0f172a", padding: "1rem", borderRadius: "10px", border: "1px solid #1e293b" }}>
+              <span style={{ color: "#94a3b8", fontSize: "0.8rem", display: "block", marginBottom: "0.25rem" }}>
+                Signal (RSSI)
+              </span>
+              <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "#34d399" }}>
+                {status?.rssi ?? -65} dBm
+              </div>
+              <span style={{ color: "#64748b", fontSize: "0.75rem", display: "block", marginTop: "0.5rem" }}>
+                WiFi Network Connected
               </span>
             </div>
           </div>
@@ -454,7 +471,7 @@ export default function IrrigationDashboard() {
                     1-Minute Safety Cutoff Active
                   </h4>
                   <p style={{ color: "#93c5fd", margin: 0, fontSize: "0.78rem", lineHeight: 1.4 }}>
-                    To prevent root rot and balcony overflow, all Relay 1 watering operations automatically execute for a <strong>1-minute (60 seconds) interval</strong> and auto-shut down.
+                    All Relay 1 watering operations automatically execute for a <strong>1-minute (60 seconds) interval</strong> and auto-shut down.
                   </p>
                 </div>
               </div>
@@ -504,7 +521,107 @@ export default function IrrigationDashboard() {
         </div>
       </div>
 
-      {/* Section 2: Automated Watering Schedules */}
+      {/* Section 2: History of Watering */}
+      <section
+        style={{
+          background: "#1e293b",
+          padding: "1.5rem",
+          borderRadius: "14px",
+          border: "1px solid #334155",
+          marginBottom: "2rem",
+          boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+          <div>
+            <h2 style={{ color: "#f8fafc", margin: 0, fontSize: "1.25rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              💧 History of Watering Runs
+            </h2>
+            <p style={{ color: "#94a3b8", margin: "0.25rem 0 0 0", fontSize: "0.85rem" }}>
+              Log of all manual triggers, scheduled runs, and 1-minute auto-cutoff events
+            </p>
+          </div>
+          <button
+            onClick={fetchWateringHistory}
+            style={{
+              background: "#334155",
+              color: "#cbd5e1",
+              border: "1px solid #475569",
+              borderRadius: "6px",
+              padding: "0.4rem 0.85rem",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            🔄 Refresh History
+          </button>
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem", color: "#cbd5e1" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #334155", textAlign: "left" }}>
+                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Date & Time</th>
+                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Trigger Source</th>
+                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Actuator</th>
+                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Duration</th>
+                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Status & Auto-Cutoff</th>
+              </tr>
+            </thead>
+            <tbody>
+              {wateringHistory.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: "1.5rem", textAlign: "center", color: "#64748b" }}>
+                    No watering runs recorded yet. Use "Trigger Water" or configure a schedule.
+                  </td>
+                </tr>
+              ) : (
+                wateringHistory.map((item) => (
+                  <tr key={item.id} style={{ borderBottom: "1px solid #1e293b" }}>
+                    <td style={{ padding: "0.75rem", color: "#94a3b8" }}>
+                      {item.triggered_at ? new Date(item.triggered_at).toLocaleString() : "-"}
+                    </td>
+                    <td style={{ padding: "0.75rem", fontWeight: 700, color: "#f8fafc" }}>
+                      <span
+                        style={{
+                          padding: "0.2rem 0.6rem",
+                          borderRadius: "4px",
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                          background: item.event_type.includes("scheduled")
+                            ? "rgba(16, 185, 129, 0.15)"
+                            : item.event_type.includes("auto_stop")
+                            ? "rgba(251, 191, 36, 0.15)"
+                            : "rgba(56, 189, 248, 0.15)",
+                          color: item.event_type.includes("scheduled")
+                            ? "#34d399"
+                            : item.event_type.includes("auto_stop")
+                            ? "#fbbf24"
+                            : "#38bdf8",
+                        }}
+                      >
+                        {item.source}
+                      </span>
+                    </td>
+                    <td style={{ padding: "0.75rem", color: "#cbd5e1" }}>
+                      Relay 1
+                    </td>
+                    <td style={{ padding: "0.75rem", fontWeight: 600 }}>
+                      {item.duration_seconds ? `${item.duration_seconds}s (1 min)` : "60s"}
+                    </td>
+                    <td style={{ padding: "0.75rem", color: "#34d399", fontSize: "0.8rem" }}>
+                      {item.status}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Section 3: Automated Watering Schedules */}
       <section
         style={{
           background: "#1e293b",
@@ -655,85 +772,6 @@ export default function IrrigationDashboard() {
             ))}
           </div>
         )}
-      </section>
-
-      {/* Section 3: Live Telemetry & Event History Logs */}
-      <section
-        style={{
-          background: "#1e293b",
-          padding: "1.5rem",
-          borderRadius: "14px",
-          border: "1px solid #334155",
-          boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
-        }}
-      >
-        <h2 style={{ color: "#f8fafc", margin: "0 0 1rem 0", fontSize: "1.25rem", fontWeight: 700 }}>
-          📋 Live Event & Heartbeat Logs
-        </h2>
-
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", color: "#cbd5e1" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid #334155", textAlign: "left" }}>
-                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Timestamp</th>
-                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Event Type</th>
-                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Topic</th>
-                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Duration</th>
-                <th style={{ padding: "0.75rem", color: "#94a3b8" }}>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={{ padding: "1.5rem", textAlign: "center", color: "#64748b" }}>
-                    No logs recorded yet.
-                  </td>
-                </tr>
-              ) : (
-                logs.map((log) => (
-                  <tr key={log.id} style={{ borderBottom: "1px solid #1e293b" }}>
-                    <td style={{ padding: "0.65rem 0.75rem", color: "#94a3b8" }}>
-                      {log.created_at ? new Date(log.created_at).toLocaleTimeString() : "-"}
-                    </td>
-                    <td style={{ padding: "0.65rem 0.75rem" }}>
-                      <span
-                        style={{
-                          padding: "0.15rem 0.5rem",
-                          borderRadius: "4px",
-                          fontSize: "0.75rem",
-                          fontWeight: 700,
-                          background:
-                            log.event_type.includes("trigger")
-                              ? "rgba(56, 189, 248, 0.15)"
-                              : log.event_type.includes("auto_stop")
-                              ? "rgba(251, 191, 36, 0.15)"
-                              : "rgba(148, 163, 184, 0.15)",
-                          color:
-                            log.event_type.includes("trigger")
-                              ? "#38bdf8"
-                              : log.event_type.includes("auto_stop")
-                              ? "#fbbf24"
-                              : "#94a3b8",
-                        }}
-                      >
-                        {log.event_type}
-                      </span>
-                    </td>
-                    <td style={{ padding: "0.65rem 0.75rem", color: "#64748b", fontFamily: "monospace" }}>
-                      {log.topic || "homelab/irrigation/#"}
-                    </td>
-                    <td style={{ padding: "0.65rem 0.75rem", fontWeight: 600 }}>
-                      {log.duration_seconds ? `${log.duration_seconds}s (1 min)` : "-"}
-                    </td>
-                    <td style={{ padding: "0.65rem 0.75rem", color: "#e2e8f0", fontSize: "0.8rem" }}>
-                      {JSON.stringify(log.details)}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
       </section>
 
       {/* Add Schedule Modal */}
