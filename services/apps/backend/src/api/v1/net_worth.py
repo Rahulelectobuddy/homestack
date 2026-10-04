@@ -25,7 +25,7 @@ try:
         generate_net_worth_pdf_report,
     )
 except ImportError:
-    from ...core.net_worth import (
+    from src.core.net_worth import (
         NetWorthSummaryOut,
         AccountBalanceCreate,
         AccountBalanceUpdate,

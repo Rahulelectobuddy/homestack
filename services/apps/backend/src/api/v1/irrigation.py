@@ -1,24 +1,44 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Dict, Any, Optional
 
-from core.irrigation import (
-    DeviceStatusOut,
-    TriggerWaterRequest,
-    ScheduleCreate,
-    ScheduleOut,
-    WateringHistoryOut,
-    IrrigationLogOut,
-    get_device_status,
-    trigger_water_relay1,
-    stop_water_relay1,
-    get_schedules,
-    create_schedule,
-    toggle_schedule,
-    delete_schedule,
-    get_watering_history,
-    get_irrigation_logs,
-    AUTO_STOP_INTERVAL_SECONDS
-)
+try:
+    from core.irrigation import (
+        DeviceStatusOut,
+        TriggerWaterRequest,
+        ScheduleCreate,
+        ScheduleOut,
+        WateringHistoryOut,
+        IrrigationLogOut,
+        get_device_status,
+        trigger_water_relay1,
+        stop_water_relay1,
+        get_schedules,
+        create_schedule,
+        toggle_schedule,
+        delete_schedule,
+        get_watering_history,
+        get_irrigation_logs,
+        AUTO_STOP_INTERVAL_SECONDS
+    )
+except ImportError:
+    from src.core.irrigation import (
+        DeviceStatusOut,
+        TriggerWaterRequest,
+        ScheduleCreate,
+        ScheduleOut,
+        WateringHistoryOut,
+        IrrigationLogOut,
+        get_device_status,
+        trigger_water_relay1,
+        stop_water_relay1,
+        get_schedules,
+        create_schedule,
+        toggle_schedule,
+        delete_schedule,
+        get_watering_history,
+        get_irrigation_logs,
+        AUTO_STOP_INTERVAL_SECONDS
+    )
 
 router = APIRouter(prefix="/api/v1/irrigation", tags=["Balcony Irrigation Engine"])
 
