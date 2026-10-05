@@ -127,6 +127,10 @@ def on_irrigation_message(topic: str, payload: Any):
 def schedule_runner_loop():
     """Background loop checking active schedules and executing 1-min watering tasks."""
     mqtt_client = SharedMQTTClient(broker=MQTT_BROKER, port=MQTT_PORT, client_id="irrigation-scheduler")
+    try:
+        mqtt_client.connect()
+    except Exception as e:
+        logger.warning(f"[Scheduler] Initial MQTT connect warning: {e}")
     
     while True:
         try:
@@ -212,6 +216,10 @@ def schedule_runner_loop():
 def auto_stop_safety_loop():
     """Background safety guard loop ensuring watering automatically turns off after 1 minute (60s)."""
     mqtt_client = SharedMQTTClient(broker=MQTT_BROKER, port=MQTT_PORT, client_id="irrigation-safety-guard")
+    try:
+        mqtt_client.connect()
+    except Exception as e:
+        logger.warning(f"[Safety Guard] Initial MQTT connect warning: {e}")
 
     while True:
         try:
