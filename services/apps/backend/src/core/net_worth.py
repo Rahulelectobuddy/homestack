@@ -736,7 +736,7 @@ async def get_projection_vs_actual_data() -> ProjectionsDataOut:
     )
 
 
-def generate_net_worth_pdf_report() -> bytes:
+async def generate_net_worth_pdf_report() -> bytes:
     """
     Generates a production-grade PDF financial report of Net Worth, current investments,
     and 7-day (week-over-week) changes.
@@ -753,7 +753,7 @@ def generate_net_worth_pdf_report() -> bytes:
         logger.error(f"ReportLab package is missing: {e}")
         raise RuntimeError("reportlab library is required for PDF report generation. Install via pip install reportlab.")
 
-    summary = get_net_worth_summary()
+    summary = await calculate_net_worth_summary(force_refresh_market=False)
 
     # Query 7-day ago baseline snapshot
     conn = get_db_connection()

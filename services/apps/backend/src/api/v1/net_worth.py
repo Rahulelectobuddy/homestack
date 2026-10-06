@@ -174,7 +174,7 @@ async def download_net_worth_pdf_report():
     current investment portfolio, and 7-day week-over-week changes.
     """
     try:
-        pdf_bytes = generate_net_worth_pdf_report()
+        pdf_bytes = await generate_net_worth_pdf_report()
         headers = {
             "Content-Disposition": f"attachment; filename=net_worth_portfolio_report.pdf"
         }
